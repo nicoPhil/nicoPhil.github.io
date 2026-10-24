@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#15171a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Zone Grise</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;600&display=swap">
+<style>
+/* Layout: one full-screen canvas for the raid; full-screen HTML panels for the stash, the bag and end-of-raid screens. */
+:root{
+  --ground:#15171a; --wall:#2d3238; --wall-top:#3d444c; --panel:#1d2024; --line:#353a41; --scrim:rgba(14,15,17,.93);
+  --fg:#e7e3d8; --muted:#8e9094; --accent:#f2a33a; --accent-ink:#1c1306; --ok:#5fc27e; --bad:#e2574c; --enemy2:#e8833f;
+  --r0:#a9abae; --r1:#6cc070; --r2:#4f9de8; --r3:#c784f2;
+  --f-display:"Chakra Petch","Arial Narrow",sans-serif; --f-body:"Barlow",system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--ground);color:var(--fg);font-family:var(--f-body);font-size:15px;overflow:hidden;overscroll-behavior:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+button{font-family:var(--f-display);font-weight:600;font-size:14px;background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:8px 12px;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.35;cursor:default}
+button.go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-size:20px;letter-spacing:.1em;text-transform:uppercase;padding:16px}
+.screen{position:fixed;inset:0;z-index:5;overflow-y:auto;touch-action:pan-y;background:var(--ground);
+  padding-block:calc(env(safe-area-inset-top,0px) + 22px) calc(env(safe-area-inset-bottom,0px) + 32px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.screen.over{background:var(--scrim)}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2{font-family:var(--f-display);margin:0;text-wrap:balance}
+h1{font-size:36px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);line-height:1}
+h2{font-size:24px;letter-spacing:.04em}
+.lbl{font-family:var(--f-display);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.cr{font-family:var(--f-display);font-size:22px;font-variant-numeric:tabular-nums}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.item{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.item:first-of-type{border-top:0}
+.nm{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.nm b{font-weight:600}
+.nm small{color:var(--muted);font-size:13px}
+.val{font-family:var(--f-display);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.btns{display:flex;gap:6px}
+.note{color:var(--muted);font-size:13px;margin:0}
+.empty{color:var(--muted);padding:6px 0;margin:0}
+#hud{position:fixed;top:0;left:0;right:0;z-index:3;pointer-events:none;display:flex;align-items:center;gap:12px;font-family:var(--f-display);font-variant-numeric:tabular-nums;
+  padding-top:calc(env(safe-area-inset-top,0px) + 10px);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.hp{position:relative;flex:1;max-width:220px;height:18px;background:rgba(0,0,0,.5);border:1px solid var(--line);border-radius:3px;overflow:hidden}
+#hpfill{position:absolute;inset:0 auto 0 0;background:var(--ok)}
+#hptxt{position:relative;font-size:12px;padding-left:6px;line-height:18px}
+#timer{font-size:20px;min-width:56px}
+#timer.warn{color:var(--bad)}
+#bagc{font-size:14px;color:var(--muted)}
+#act{position:fixed;z-index:3;display:flex;gap:10px;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 18px)}
+#act button{background:rgba(20,22,25,.82);font-size:15px;padding:12px 16px}
+#toast{position:fixed;z-index:4;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 48px);max-width:calc(100% - 32px);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 12px;font-size:14px;pointer-events:none;opacity:0;transition:opacity .2s}
+#toast.on{opacity:1}
+#hint{position:fixed;z-index:3;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);text-align:center;color:var(--muted);font-family:var(--f-display);letter-spacing:.06em;pointer-events:none;transition:opacity .6s}
+.res{font-family:var(--f-display);font-size:28px;font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){#toast,#hint{transition:none}}
+</style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+<div id="hud" hidden>
+  <div class="hp"><div id="hpfill"></div><span id="hptxt"></span></div>
+  <div id="timer"></div>
+  <div id="bagc"></div>
+</div>
+<div id="act" hidden><button id="bHeal" type="button">Soin</button><button id="bBag" type="button">Sac</button></div>
+<div id="hint" hidden>Glisse pour bouger · Arrête-toi pour tirer</div>
+<div id="toast"></div>
+<div id="stash" class="screen"></div>
+<div id="bag" class="screen over" hidden></div>
+<div id="end" class="screen" hidden></div>
+
+<script>
+const ITEMS={
+  scrap:{n:"Ferraille",t:"val",r:0,v:15,s:1},
+  wires:{n:"Câbles en cuivre",t:"val",r:0,v:25,s:1},
+  batt:{n:"Piles",t:"val",r:0,v:30,s:1},
+  pills:{n:"Antibiotiques",t:"val",r:1,v:80,s:1},
+  watch:{n:"Montre",t:"val",r:1,v:95,s:1},
+  hdd:{n:"Disque dur",t:"val",r:1,v:120,s:1},
+  gpu:{n:"Carte graphique",t:"val",r:2,v:360,s:2},
+  gold:{n:"Lingot d'or",t:"val",r:2,v:420,s:1},
+  key:{n:"Clé chiffrée",t:"val",r:3,v:900,s:1},
+  proto:{n:"Prototype",t:"val",r:3,v:1300,s:2},
+  med:{n:"Trousse de soin",t:"med",r:1,v:60,s:1},
+  rusty:{n:"Pistolet rouillé",t:"wpn",r:0,v:0,s:2,dmg:10,rate:2,range:260,spr:.07,pel:1,noise:300},
+  p9:{n:"Pistolet 9 mm",t:"wpn",r:0,v:120,s:2,dmg:14,rate:2.8,range:300,spr:.05,pel:1,noise:320},
+  smg:{n:"PM compact",t:"wpn",r:1,v:380,s:2,dmg:8,rate:8,range:250,spr:.13,pel:1,noise:380},
+  sg:{n:"Fusil à pompe",t:"wpn",r:1,v:450,s:2,dmg:9,rate:1.1,range:200,spr:.3,pel:6,noise:460},
+  ar:{n:"Fusil d'assaut",t:"wpn",r:2,v:900,s:2,dmg:17,rate:5,range:360,spr:.05,pel:1,noise:480},
+  dmr:{n:"Fusil de précision",t:"wpn",r:3,v:1400,s:2,dmg:60,rate:1.2,range:520,spr:.01,pel:1,noise:560},
+  vest1:{n:"Gilet léger",t:"arm",r:1,v:220,s:2,red:.2},
+  vest2:{n:"Gilet lourd",t:"arm",r:2,v:700,s:2,red:.4},
+};
+const SHOP=["p9","smg","sg","vest1","med"];
+const RAR=["Commun","Peu commun","Rare","Épique"];
+const CAP=10, W=2400, H=2400, RAID_TIME=240, KEY="zone-grise-save";
+const $=id=>document.getElementById(id);
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const mk=k=>({k,u:uid()});
+const price=k=>Math.round(ITEMS[k].v*1.6);
+const bagUsed=b=>b.reduce((s,i)=>s+ITEMS[i.k].s,0);
+const fmtM=px=>Math.round(px/10)+" m";
+function desc(k){const d=ITEMS[k];
+  if(d.t==="wpn") return `${d.pel>1?d.pel+"×":""}${d.dmg} dég · ${String(d.rate).replace(".",",")} tirs/s · portée ${fmtM(d.range)}`;
+  if(d.t==="arm") return `−${d.red*100} % de dégâts subis`;
+  if(d.t==="med") return "Rend 50 PV";
+  return RAR[d.r];}
+
+/* ---------- save ---------- */
+const fresh=()=>({credits:250,stash:[],lo:{w:null,a:null,meds:0},st:{raids:0,ext:0,dead:0,best:0}});
+let S=fresh(), dbRef=null, chain=Promise.resolve(), mode="stash";
+function valid(s){return s&&Array.isArray(s.stash)&&s.lo&&s.st&&typeof s.credits==="number"}
+try{const l=JSON.parse(localStorage.getItem(KEY)); if(valid(l)) S=l;}catch(e){}
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+  if(dbRef){const snap=JSON.stringify(S); chain=chain.then(()=>dbRef.set({save:snap,at:Date.now()})).catch(()=>{});}
+}
+(async()=>{try{
+  if(!window.claude||!window.claude.use) return;
+  const [db,user]=await Promise.all([claude.use("db"),claude.use("user")]);
+  if(!db||!user) return;
+  const id=await user.id(); if(!id) return;
+  dbRef=db.collection("data/users/"+id).doc("save");
+  const snap=await dbRef.get();
+  if(snap.exists){const s=JSON.parse(snap.data().save); if(valid(s)&&mode!=="raid"){S=s; renderStash();}}
+  else save();
+  if(mode==="stash") renderStash();
+}catch(e){}})();
+
+/* ---------- stash ---------- */
+function row(it,btns,extra=""){const d=ITEMS[it.k];
+  return `<div class="item"><div class="nm"><b style="color:var(--r${d.r})">${d.n}</b><small>${extra||desc(it.k)}</small></div>${btns}</div>`;}
+function renderStash(){
+  mode="stash";
+  const lo=S.lo, meds=S.stash.filter(i=>i.k==="med").length;
+  const others=S.stash.filter(i=>i.k!=="med").sort((a,b)=>ITEMS[b.k].v-ITEMS[a.k].v);
+  const stashVal=S.stash.reduce((s,i)=>s+ITEMS[i.k].v,0);
+  $("stash").innerHTML=`<div class="wrap">
+    <div class="top"><div><div class="lbl">Planque</div><h1>Zone Grise</h1></div>
+      <div style="text-align:right"><div class="lbl">Crédits</div><div class="cr">${S.credits} cr</div></div></div>
+    <div class="card"><div class="lbl">Ce que tu emportes</div>
+      ${lo.w?row(lo.w,`<div class="btns"><button data-a="unw">Retirer</button></div>`):row({k:"rusty"},"","Kit gratuit, donné si tu n'as pas d'arme")}
+      ${lo.a?row(lo.a,`<div class="btns"><button data-a="una">Retirer</button></div>`):`<div class="item"><div class="nm"><b>Pas de gilet</b><small>Dégâts subis normaux</small></div></div>`}
+      <div class="item"><div class="nm"><b>Trousses de soin : ${lo.meds} / 3</b><small>${meds} en planque</small></div>
+        <div class="btns"><button data-a="medm" ${lo.meds?"":"disabled"} aria-label="Laisser une trousse">−</button><button data-a="medp" ${meds&&lo.meds<3?"":"disabled"} aria-label="Prendre une trousse">+</button></div></div>
+      <p class="note">Si tu meurs, tu perds tout ce qui est ici et tout ce qu'il y a dans ton sac.</p>
+    </div>
+    <button class="go" data-a="raid">Partir en raid</button>
+    <div class="card"><div class="top"><div class="lbl">Planque · ${S.stash.length} objets</div><div class="val">${stashVal} cr</div></div>
+      ${others.length?others.map(i=>row(i,`<div class="btns">${ITEMS[i.k].t==="wpn"||ITEMS[i.k].t==="arm"?`<button data-a="eq" data-u="${i.u}">Équiper</button>`:""}<button data-a="sell" data-u="${i.u}">${ITEMS[i.k].v} cr</button></div>`)).join("")
+        :`<p class="empty">Rien pour l'instant. Le loot ramené d'un raid arrive ici.</p>`}
+      ${meds?row({k:"med"},`<div class="btns"><button data-a="sellmed">${ITEMS.med.v} cr</button></div>`,`${meds} en stock · Rend 50 PV`):""}
+    </div>
+    <div class="card"><div class="lbl">Marchand</div>
+      ${SHOP.map(k=>row({k},`<div class="btns"><button data-a="buy" data-k="${k}" ${S.credits>=price(k)?"":"disabled"}>${price(k)} cr</button></div>`)).join("")}
+    </div>
+    <p class="note">${S.st.raids} raids · ${S.st.ext} extractions · ${S.st.dead} morts · meilleur butin ${S.st.best} cr · sauvegarde ${dbRef?"liée à ton compte":"sur cet appareil"}</p>
+  </div>`;
+}
+$("stash").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  const a=b.dataset.a, lo=S.lo, take=u=>{const i=S.stash.findIndex(x=>x.u===u); return i<0?null:S.stash.splice(i,1)[0]};
+  if(a==="raid") return startRaid();
+  if(a==="unw"){S.stash.push(lo.w); lo.w=null}
+  if(a==="una"){S.stash.push(lo.a); lo.a=null}
+  if(a==="medp"){const it=S.stash.find(i=>i.k==="med"); if(it){take(it.u); lo.meds++}}
+  if(a==="medm"&&lo.meds){lo.meds--; S.stash.push(mk("med"))}
+  if(a==="eq"){const it=take(b.dataset.u); if(it){const slot=ITEMS[it.k].t==="wpn"?"w":"a"; if(lo[slot]) S.stash.push(lo[slot]); lo[slot]=it}}
+  if(a==="sell"){const it=take(b.dataset.u); if(it) S.credits+=ITEMS[it.k].v}
+  if(a==="sellmed"){const it=S.stash.find(i=>i.k==="med"); if(it){take(it.u); S.credits+=ITEMS.med.v}}
+  if(a==="buy"){const k=b.dataset.k; if(S.credits>=price(k)){S.credits-=price(k); S.stash.push(mk(k))}}
+  save(); renderStash();
+});
+
+/* ---------- canvas ---------- */
+const cv=$("cv"), ctx=cv.getContext("2d");
+const css=getComputedStyle(document.documentElement), C={};
+["ground","wall","wall-top","fg","muted","accent","ok","bad","enemy2","r0","r1","r2","r3","line"].forEach(k=>C[k]=css.getPropertyValue("--"+k).trim());
+let dpr=1, vw=0, vh=0, zoom=1;
+function resize(){dpr=Math.min(2,window.devicePixelRatio||1); vw=innerWidth; vh=innerHeight; cv.width=vw*dpr; cv.height=vh*dpr; zoom=Math.min(1,Math.min(vw,vh)/560)}
+addEventListener("resize",resize); resize();
+
+/* ---------- input ---------- */
+let js=null; const keys={};
+cv.addEventListener("pointerdown",e=>{if(mode!=="raid"||js) return; js={id:e.pointerId,bx:e.clientX,by:e.clientY,x:e.clientX,y:e.clientY}; cv.setPointerCapture(e.pointerId); hideHint()});
+cv.addEventListener("pointermove",e=>{if(js&&e.pointerId===js.id){js.x=e.clientX; js.y=e.clientY}});
+const endJs=e=>{if(js&&e.pointerId===js.id) js=null};
+cv.addEventListener("pointerup",endJs); cv.addEventListener("pointercancel",endJs);
+addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true; if(mode==="raid"&&(e.key==="Escape"||e.key.toLowerCase()==="b")) openBag(); else if(mode==="bag"&&(e.key==="Escape"||e.key.toLowerCase()==="b")) closeBag(); if(mode==="raid") hideHint()});
+addEventListener("keyup",e=>{keys[e.key.toLowerCase()]=false});
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&mode==="raid") openBag()});
+function moveVec(){
+  let x=0,y=0;
+  if(js){x=(js.x-js.bx)/55; y=(js.y-js.by)/55}
+  if(keys.w||keys.z||keys.arrowup) y-=1; if(keys.s||keys.arrowdown) y+=1;
+  if(keys.a||keys.q||keys.arrowleft) x-=1; if(keys.d||keys.arrowright) x+=1;
+  const l=Math.hypot(x,y); if(l<.18) return {x:0,y:0}; if(l>1){x/=l; y/=l} return {x,y};
+}
+
+/* ---------- geometry ---------- */
+let R=null;
+function segHits(x1,y1,x2,y2,r){let t0=0,t1=1; const dx=x2-x1,dy=y2-y1, p=[-dx,dx,-dy,dy], q=[x1-r.x,r.x+r.w-x1,y1-r.y,r.y+r.h-y1];
+  for(let i=0;i<4;i++){if(p[i]===0){if(q[i]<0) return false} else {const t=q[i]/p[i]; if(p[i]<0){if(t>t1) return false; if(t>t0) t0=t} else {if(t<t0) return false; if(t<t1) t1=t}}} return true}
+const los=(a,b)=>!R.walls.some(w=>segHits(a.x,a.y,b.x,b.y,w));
+const inWall=(x,y,pad=0)=>R.walls.some(w=>x>w.x-pad&&x<w.x+w.w+pad&&y>w.y-pad&&y<w.y+w.h+pad);
+function collide(o,r){for(const w of R.walls){const cx=clamp(o.x,w.x,w.x+w.w), cy=clamp(o.y,w.y,w.y+w.h); let dx=o.x-cx, dy=o.y-cy; const d2=dx*dx+dy*dy;
+  if(d2<r*r){if(d2===0){const l=o.x-w.x, rr=w.x+w.w-o.x, t=o.y-w.y, b=w.y+w.h-o.y, m=Math.min(l,rr,t,b); if(m===l) o.x=w.x-r; else if(m===rr) o.x=w.x+w.w+r; else if(m===t) o.y=w.y-r; else o.y=w.y+w.h+r}
+    else {const d=Math.sqrt(d2); o.x+=dx/d*(r-d); o.y+=dy/d*(r-d)}}}}
+function freePt(pad,ok=()=>true){for(let i=0;i<800;i++){const x=rnd(80,W-80), y=rnd(80,H-80); if(!inWall(x,y,pad)&&ok(x,y)) return {x,y}} return {x:W/2,y:H/2}}
+const depth=(x,y)=>clamp(1-Math.hypot(x-W/2,y-H/2)/(W*.62),0,1);
+function rollItem(d){
+  const x=Math.random(); let r=x<.02+.1*d?3:x<.1+.28*d?2:x<.42+.2*d?1:0;
+  const tr=Math.random(), t=tr<.62?"val":tr<.76?"med":tr<.9?"wpn":"arm";
+  if(t==="med") return mk("med");
+  for(let k=r;k>=0;k--){const c=Object.keys(ITEMS).filter(id=>ITEMS[id].t===t&&ITEMS[id].r===k&&id!=="rusty"); if(c.length) return mk(pick(c))}
+  return mk(pick(Object.keys(ITEMS).filter(id=>ITEMS[id].t===t&&id!=="rusty")));
+}
+
+/* ---------- raid ---------- */
+function spawnEnemy(x,y,aggro=false){const gun=Math.random()<.32; R.enemies.push({x,y,gun,hp:gun?55:42,max:gun?55:42,aggro,wx:0,wy:0,wt:0,cd:rnd(.5,1.5),hit:0})}
+function startRaid(){
+  R={walls:[],crates:[],enemies:[],bullets:[],ebul:[],pick:[],exits:[],parts:[],bag:[],t:RAID_TIME,spawnT:24,ext:0,toastT:0,shake:0};
+  R.walls.push({x:-40,y:-40,w:W+80,h:40},{x:-40,y:H,w:W+80,h:40},{x:-40,y:0,w:40,h:H},{x:W,y:0,w:40,h:H});
+  for(let i=0;i<60;i++){const x=rnd(100,W-300), y=rnd(100,H-300), k=Math.random();
+    if(k<.35) R.walls.push({x,y,w:rnd(140,340),h:26}); else if(k<.7) R.walls.push({x,y,w:26,h:rnd(140,340)}); else R.walls.push({x,y,w:rnd(70,170),h:rnd(70,170)})}
+  const e1=freePt(70,(x,y)=>Math.min(x,y,W-x,H-y)<260);
+  const e2=freePt(70,(x,y)=>Math.min(x,y,W-x,H-y)<260&&Math.hypot(x-e1.x,y-e1.y)>1400);
+  R.exits=[e1,e2];
+  const sp=freePt(30,(x,y)=>Math.min(...R.exits.map(e=>Math.hypot(x-e.x,y-e.y)))>1100);
+  const wpn=S.lo.w||mk("rusty");
+  R.p={x:sp.x,y:sp.y,hp:100,max:100,cd:0,face:0,wpn,arm:S.lo.a,meds:S.lo.meds,hit:0,still:0};
+  for(let i=0;i<18;i++){const c=freePt(30,(x,y)=>Math.hypot(x-sp.x,y-sp.y)>260); R.crates.push({x:c.x,y:c.y,d:depth(c.x,c.y),open:false,prog:0})}
+  for(let i=0;i<11;i++){const c=freePt(24,(x,y)=>Math.hypot(x-sp.x,y-sp.y)>480); spawnEnemy(c.x,c.y)}
+  S.st.raids++; save();
+  mode="raid"; js=null;
+  $("stash").hidden=true; $("end").hidden=true; $("hud").hidden=false; $("act").hidden=false;
+  const h=$("hint"); h.hidden=false; h.style.opacity=1; setTimeout(hideHint,5000);
+  updHud(); last=performance.now();
+}
+function hideHint(){$("hint").style.opacity=0}
+function toast(msg){const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"),1800)}
+function noise(x,y,rad){for(const e of R.enemies) if(Math.hypot(e.x-x,e.y-y)<rad) e.aggro=true}
+function burst(x,y,col,n=8,sp=140){for(let i=0;i<n;i++){const a=rnd(0,6.28), s=rnd(30,sp); R.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.2,.5),col})}}
+function hurt(d){const p=R.p; const dmg=d*(1-(p.arm?ITEMS[p.arm.k].red:0)); p.hp-=dmg; p.hit=.15; R.shake=.12; if(p.hp<=0) endRaid(false,"Tu es mort.")}
+function heal(){const p=R.p; if(p.hp>=p.max) return toast("PV déjà au maximum");
+  if(p.meds>0) p.meds--; else {const i=R.bag.findIndex(x=>x.k==="med"); if(i<0) return toast("Aucune trousse de soin"); R.bag.splice(i,1)}
+  p.hp=Math.min(p.max,p.hp+50); burst(p.x,p.y,C.ok,10,90); updHud()}
+$("bHeal").addEventListener("click",()=>{if(mode==="raid") heal()});
+$("bBag").addEventListener("click",()=>{if(mode==="raid") openBag()});
+
+function update(dt){
+  const p=R.p, m=moveVec(), moving=m.x!==0||m.y!==0, wd=ITEMS[p.wpn.k];
+  p.x+=m.x*175*dt; p.y+=m.y*175*dt; collide(p,13);
+  if(moving) p.face=Math.atan2(m.y,m.x);
+  p.still=moving?0:p.still+dt; p.cd-=dt; p.hit-=dt; R.shake-=dt;
+  for(const c of R.crates){if(c.open) continue; const near=Math.hypot(c.x-p.x,c.y-p.y)<48;
+    c.prog=near&&!moving?c.prog+dt:0;
+    if(c.prog>=.8){c.open=true; const n=1+Math.floor(Math.random()*2)+(c.d>.55?1:0);
+      for(let i=0;i<n;i++){const a=rnd(0,6.28); R.pick.push({x:c.x+Math.cos(a)*24,y:c.y+Math.sin(a)*24,it:rollItem(c.d)})} burst(c.x,c.y,C.accent,10,80)}}
+  if(!moving&&p.still>.08&&p.cd<=0){
+    let best=null,bd=wd.range;
+    for(const e of R.enemies){const d=Math.hypot(e.x-p.x,e.y-p.y); if(d<bd&&los(p,e)){bd=d; best=e}}
+    if(best){const a0=Math.atan2(best.y-p.y,best.x-p.x); p.face=a0; p.cd=1/wd.rate;
+      for(let i=0;i<wd.pel;i++){const a=a0+rnd(-wd.spr,wd.spr), sp=680; R.bullets.push({x:p.x+Math.cos(a)*16,y:p.y+Math.sin(a)*16,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:wd.range/sp*1.1,dmg:wd.dmg})}
+      burst(p.x+Math.cos(a0)*18,p.y+Math.sin(a0)*18,C.accent,3,60); noise(p.x,p.y,wd.noise)}}
+  for(let i=R.pick.length-1;i>=0;i--){const k=R.pick[i], d=Math.hypot(k.x-p.x,k.y-p.y);
+    if(k.nop){if(d>52) k.nop=false; continue}
+    if(d<26){const s=ITEMS[k.it.k].s; if(bagUsed(R.bag)+s<=CAP){R.bag.push(k.it); R.pick.splice(i,1); toast("+ "+ITEMS[k.it.k].n); updHud()} else if(R.toastT<=0){toast("Sac plein : ouvre le sac pour jeter un objet"); R.toastT=2.5}}}
+  R.toastT-=dt;
+  for(const e of R.enemies){
+    const dx=p.x-e.x, dy=p.y-e.y, d=Math.hypot(dx,dy); e.cd-=dt; e.hit-=dt;
+    if(!e.aggro&&d<250&&los(e,p)) e.aggro=true;
+    if(e.aggro&&d>950) e.aggro=false;
+    let vx=0,vy=0;
+    if(!e.aggro){e.wt-=dt; if(e.wt<=0){const a=rnd(0,6.28); e.wx=Math.cos(a); e.wy=Math.sin(a); e.wt=rnd(1.5,4); if(Math.random()<.4){e.wx=0; e.wy=0}} vx=e.wx*40; vy=e.wy*40}
+    else if(!e.gun){vx=dx/d*118; vy=dy/d*118; if(d<29&&e.cd<=0){hurt(12); e.cd=.8}}
+    else {const see=los(e,p);
+      if(!see||d>320){vx=dx/d*85; vy=dy/d*85} else if(d<190){vx=-dx/d*70; vy=-dy/d*70}
+      if(see&&d<400&&e.cd<=0){const a=Math.atan2(dy,dx)+rnd(-.08,.08); R.ebul.push({x:e.x,y:e.y,vx:Math.cos(a)*290,vy:Math.sin(a)*290,life:1.6,dmg:9}); e.cd=rnd(1.3,1.8)}}
+    e.x+=vx*dt; e.y+=vy*dt;
+    for(const o of R.enemies){if(o===e) continue; const ox=e.x-o.x, oy=e.y-o.y, od=Math.hypot(ox,oy); if(od>0&&od<28){e.x+=ox/od*(28-od)/2; e.y+=oy/od*(28-od)/2}}
+    collide(e,14);
+  }
+  for(let i=R.bullets.length-1;i>=0;i--){const b=R.bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt;
+    if(b.life<=0||inWall(b.x,b.y)){R.bullets.splice(i,1); continue}
+    const e=R.enemies.find(e=>Math.hypot(e.x-b.x,e.y-b.y)<15);
+    if(e){e.hp-=b.dmg; e.hit=.1; e.aggro=true; R.bullets.splice(i,1); burst(b.x,b.y,C.bad,4,90);
+      if(e.hp<=0){R.enemies.splice(R.enemies.indexOf(e),1); burst(e.x,e.y,C.bad,14,160); if(Math.random()<.45) R.pick.push({x:e.x,y:e.y,it:rollItem(depth(e.x,e.y))})}}}
+  for(let i=R.ebul.length-1;i>=0;i--){const b=R.ebul[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt;
+    if(b.life<=0||inWall(b.x,b.y)){R.ebul.splice(i,1); continue}
+    if(Math.hypot(b.x-p.x,b.y-p.y)<14){R.ebul.splice(i,1); hurt(b.dmg); if(mode!=="raid") return}}
+  for(let i=R.parts.length-1;i>=0;i--){const q=R.parts[i]; q.x+=q.vx*dt; q.y+=q.vy*dt; q.vx*=.9; q.vy*=.9; q.life-=dt; if(q.life<=0) R.parts.splice(i,1)}
+  if(R.exits.some(e=>Math.hypot(e.x-p.x,e.y-p.y)<62)){R.ext+=dt; if(R.ext>=3) return endRaid(true)} else R.ext=0;
+  R.t-=dt; if(R.t<=0) return endRaid(false,"Temps écoulé : la zone a été verrouillée.");
+  R.spawnT-=dt; if(R.spawnT<=0){R.spawnT=22; for(let i=0;i<2;i++){const c=freePt(24,(x,y)=>Math.hypot(x-p.x,y-p.y)>600); spawnEnemy(c.x,c.y,R.t<120)}}
+  updHud();
+}
+function updHud(){const p=R.p, f=clamp(p.hp/p.max,0,1);
+  $("hpfill").style.width=f*100+"%"; $("hpfill").style.background=f<.35?C.bad:C.ok;
+  $("hptxt").textContent=Math.ceil(Math.max(0,p.hp))+" PV";
+  const s=Math.max(0,Math.ceil(R.t)); $("timer").textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); $("timer").classList.toggle("warn",s<=60);
+  $("bagc").textContent="Sac "+bagUsed(R.bag)+"/"+CAP;
+  $("bHeal").textContent="Soin ("+(p.meds+R.bag.filter(i=>i.k==="med").length)+")";
+}
+
+/* ---------- bag ---------- */
+function openBag(){mode="bag"; js=null; renderBag(); $("bag").hidden=false}
+function closeBag(){$("bag").hidden=true; mode="raid"; last=performance.now()}
+function renderBag(){const p=R.p, val=R.bag.reduce((s,i)=>s+ITEMS[i.k].v,0);
+  $("bag").innerHTML=`<div class="wrap">
+    <div class="top"><h2>Sac ${bagUsed(R.bag)} / ${CAP}</h2><div class="val">${val} cr</div></div>
+    <div class="card"><div class="lbl">Équipé</div>${row(p.wpn,"")}${p.arm?row(p.arm,""):""}
+      <div class="item"><div class="nm"><b>${Math.ceil(p.hp)} / ${p.max} PV</b><small>${p.meds} trousse(s) sur toi</small></div></div></div>
+    <div class="card">${R.bag.length?R.bag.map(i=>{const t=ITEMS[i.k].t;
+      return row(i,`<div class="btns">${t==="wpn"||t==="arm"?`<button data-a="eq" data-u="${i.u}">Équiper</button>`:""}${t==="med"?`<button data-a="use" data-u="${i.u}">Utiliser</button>`:""}<button data-a="drop" data-u="${i.u}">Jeter</button></div>`,`${desc(i.k)} · ${ITEMS[i.k].s} place${ITEMS[i.k].s>1?"s":""} · ${ITEMS[i.k].v} cr`)}).join("")
+      :`<p class="empty">Sac vide. Arrête-toi près d'une caisse pour la fouiller.</p>`}</div>
+    <p class="note">Les caisses violettes, au centre de la carte, contiennent le meilleur loot. Les tirs font du bruit et attirent les ennemis.</p>
+    <button class="go" data-a="back">Reprendre</button></div>`;
+}
+$("bag").addEventListener("click",e=>{const b=e.target.closest("button"); if(!b) return; const p=R.p;
+  if(b.dataset.a==="back") return closeBag();
+  const i=R.bag.findIndex(x=>x.u===b.dataset.u); if(i<0) return; const it=R.bag[i], t=ITEMS[it.k].t;
+  if(b.dataset.a==="drop"){R.bag.splice(i,1); R.pick.push({x:p.x,y:p.y,it,nop:true})}
+  if(b.dataset.a==="use"){R.bag.splice(i,1); p.meds++; heal()}
+  if(b.dataset.a==="eq"){const slot=t==="wpn"?"wpn":"arm", old=p[slot]; p[slot]=it; R.bag.splice(i,1); if(old) R.bag.push(old)}
+  updHud(); renderBag();
+});
+
+/* ---------- end ---------- */
+function endRaid(ok,why){
+  const p=R.p; mode="end"; js=null;
+  $("hud").hidden=true; $("act").hidden=true; $("hint").hidden=true; $("bag").hidden=true;
+  let html;
+  if(ok){
+    const gained=R.bag.filter(i=>i.k!=="rusty"), val=gained.reduce((s,i)=>s+ITEMS[i.k].v,0);
+    S.stash.push(...gained); S.lo.w=p.wpn.k==="rusty"?null:p.wpn; S.lo.a=p.arm; S.lo.meds=p.meds;
+    S.st.ext++; S.st.best=Math.max(S.st.best,val);
+    html=`<div class="lbl">Extraction réussie</div><h1 style="color:var(--ok)">Sorti vivant</h1><div class="res">+ ${val} cr de butin</div>
+      <div class="card">${gained.length?gained.map(i=>row(i,`<span class="val">${ITEMS[i.k].v} cr</span>`)).join(""):`<p class="empty">Sac vide, mais ton équipement est sauf.</p>`}</div>`;
+  } else {
+    const lost=[...(p.wpn.k!=="rusty"?[p.wpn]:[]),...(p.arm?[p.arm]:[]),...R.bag], val=lost.reduce((s,i)=>s+ITEMS[i.k].v,0)+p.meds*ITEMS.med.v;
+    S.lo={w:null,a:null,meds:0}; S.st.dead++;
+    html=`<div class="lbl">Raid perdu</div><h1 style="color:var(--bad)">${why}</h1><div class="res">− ${val} cr perdus</div>
+      <div class="card">${lost.length||p.meds?lost.map(i=>row(i,`<span class="val">${ITEMS[i.k].v} cr</span>`)).join("")+(p.meds?row({k:"med"},"",p.meds+" trousse(s)"):""):`<p class="empty">Tu n'avais rien à perdre. Le kit gratuit t'attend.</p>`}</div>`;
+  }
+  save();
+  $("end").innerHTML=`<div class="wrap">${html}<button class="go" data-a="home">Retour à la planque</button></div>`;
+  $("end").hidden=false;
+}
+$("end").addEventListener("click",e=>{if(e.target.closest("button")){ $("end").hidden=true; $("stash").hidden=false; renderStash(); $("stash").scrollTop=0}});
+
+/* ---------- draw ---------- */
+const crateCol=d=>d>.62?C.r3:d>.36?C.r2:C.r0;
+function draw(){
+  ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle=C.ground; ctx.fillRect(0,0,cv.width,cv.height);
+  if(!R) return;
+  const p=R.p, sx=R.shake>0?rnd(-4,4):0, sy=R.shake>0?rnd(-4,4):0;
+  const cx=p.x-vw/2/zoom+sx, cy=p.y-vh/2/zoom+sy, k=dpr*zoom;
+  ctx.setTransform(k,0,0,k,-cx*k,-cy*k);
+  ctx.strokeStyle=C.line; ctx.globalAlpha=.35; ctx.lineWidth=1; ctx.beginPath();
+  for(let x=Math.floor(cx/100)*100;x<cx+vw/zoom;x+=100){ctx.moveTo(x,cy); ctx.lineTo(x,cy+vh/zoom)}
+  for(let y=Math.floor(cy/100)*100;y<cy+vh/zoom;y+=100){ctx.moveTo(cx,y); ctx.lineTo(cx+vw/zoom,y)}
+  ctx.stroke(); ctx.globalAlpha=1;
+  const tt=performance.now()/1000;
+  for(const e of R.exits){ctx.fillStyle=C.ok; ctx.globalAlpha=.12+.06*Math.sin(tt*3); ctx.beginPath(); ctx.arc(e.x,e.y,62,0,6.28); ctx.fill(); ctx.globalAlpha=1;
+    ctx.strokeStyle=C.ok; ctx.setLineDash([10,8]); ctx.lineWidth=2; ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle=C.ok; ctx.font="600 14px "+css.getPropertyValue("--f-display"); ctx.textAlign="center"; ctx.fillText("SORTIE",e.x,e.y+5)}
+  for(const c of R.crates){ctx.fillStyle=c.open?C.wall:C.ground; ctx.strokeStyle=c.open?C.line:crateCol(c.d); ctx.lineWidth=3;
+    ctx.fillRect(c.x-13,c.y-13,26,26); ctx.strokeRect(c.x-13,c.y-13,26,26); if(!c.open){ctx.beginPath(); ctx.moveTo(c.x-13,c.y); ctx.lineTo(c.x+13,c.y); ctx.stroke()}}
+  for(const q of R.pick){ctx.fillStyle=C["r"+ITEMS[q.it.k].r]; ctx.save(); ctx.translate(q.x,q.y); ctx.rotate(.785); ctx.fillRect(-6,-6,12,12); ctx.restore()}
+  for(const w of R.walls){ctx.fillStyle=C.wall; ctx.fillRect(w.x,w.y,w.w,w.h); ctx.fillStyle=C["wall-top"]; ctx.fillRect(w.x,w.y,w.w,4)}
+  for(const e of R.enemies){ctx.fillStyle=e.hit>0?C.fg:(e.gun?C.enemy2:C.bad); ctx.beginPath(); ctx.arc(e.x,e.y,14,0,6.28); ctx.fill();
+    if(e.gun){const a=Math.atan2(p.y-e.y,p.x-e.x); ctx.strokeStyle=C.enemy2; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.x+Math.cos(a)*22,e.y+Math.sin(a)*22); ctx.stroke()}
+    if(e.aggro){ctx.fillStyle=C.bad; ctx.fillRect(e.x-2,e.y-30,4,9)}
+    if(e.hp<e.max){ctx.fillStyle=C.ground; ctx.fillRect(e.x-15,e.y+19,30,4); ctx.fillStyle=C.bad; ctx.fillRect(e.x-15,e.y+19,30*e.hp/e.max,4)}}
+  ctx.lineWidth=3; ctx.strokeStyle=C.accent; ctx.beginPath();
+  for(const b of R.bullets){ctx.moveTo(b.x,b.y); ctx.lineTo(b.x-b.vx*.02,b.y-b.vy*.02)} ctx.stroke();
+  ctx.fillStyle=C.enemy2; for(const b of R.ebul){ctx.beginPath(); ctx.arc(b.x,b.y,4,0,6.28); ctx.fill()}
+  for(const q of R.parts){ctx.globalAlpha=clamp(q.life*3,0,1); ctx.fillStyle=q.col; ctx.fillRect(q.x-2,q.y-2,4,4)} ctx.globalAlpha=1;
+  if(p.arm){ctx.strokeStyle=C.r2; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x,p.y,17,0,6.28); ctx.stroke()}
+  ctx.fillStyle=p.hit>0?C.bad:C.accent; ctx.beginPath(); ctx.arc(p.x,p.y,13,0,6.28); ctx.fill();
+  ctx.strokeStyle=C.fg; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x+Math.cos(p.face)*21,p.y+Math.sin(p.face)*21); ctx.stroke();
+  // fog in screen space
+  ctx.setTransform(1,0,0,1,0,0);
+  const px=(p.x-cx)*k, py=(p.y-cy)*k, g=ctx.createRadialGradient(px,py,280*k,px,py,560*k);
+  g.addColorStop(0,"rgba(8,9,11,0)"); g.addColorStop(1,"rgba(8,9,11,.88)"); ctx.fillStyle=g; ctx.fillRect(0,0,cv.width,cv.height);
+  // progress rings
+  ctx.setTransform(k,0,0,k,-cx*k,-cy*k);
+  const ring=(x,y,f,col)=>{ctx.strokeStyle=col; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(x,y,24,-1.57,-1.57+6.28*f); ctx.stroke()};
+  for(const c of R.crates) if(!c.open&&c.prog>0) ring(c.x,c.y,c.prog/.8,C.accent);
+  if(R.ext>0){ring(p.x,p.y,R.ext/3,C.ok); ctx.fillStyle=C.ok; ctx.textAlign="center"; ctx.font="600 15px "+css.getPropertyValue("--f-display"); ctx.fillText("EXTRACTION "+Math.ceil(3-R.ext),p.x,p.y-34)}
+  // exit arrows on screen edges
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const top=60, bot=vh-90;
+  for(const e of R.exits){const ex=(e.x-cx)*zoom, ey=(e.y-cy)*zoom; if(ex>0&&ex<vw&&ey>top&&ey<bot) continue;
+    const a=Math.atan2(ey-vh/2,ex-vw/2), hx=clamp(vw/2+Math.cos(a)*vw,28,vw-28), hy=clamp(vh/2+Math.sin(a)*vh,top+20,bot);
+    ctx.save(); ctx.translate(hx,hy); ctx.rotate(a); ctx.fillStyle=C.ok; ctx.beginPath(); ctx.moveTo(12,0); ctx.lineTo(-8,-9); ctx.lineTo(-8,9); ctx.fill(); ctx.restore();
+    ctx.fillStyle=C.ok; ctx.font="600 12px "+css.getPropertyValue("--f-display"); ctx.textAlign="center"; ctx.fillText(fmtM(Math.hypot(e.x-p.x,e.y-p.y)),hx-Math.cos(a)*30,hy-Math.sin(a)*22+4)}
+  if(js&&mode==="raid"){const m=moveVec(); ctx.strokeStyle=C.fg; ctx.globalAlpha=.3; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(js.bx,js.by,55,0,6.28); ctx.stroke();
+    ctx.fillStyle=C.fg; ctx.beginPath(); ctx.arc(js.bx+m.x*55,js.by+m.y*55,22,0,6.28); ctx.fill(); ctx.globalAlpha=1}
+}
+
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000); last=now; if(mode==="raid") update(dt); draw(); requestAnimationFrame(frame)}
+renderStash(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
