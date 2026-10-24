@@ -59,6 +59,15 @@ h2{font-size:24px;letter-spacing:.04em}
 #toast{position:fixed;z-index:4;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 48px);max-width:calc(100% - 32px);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 12px;font-size:14px;pointer-events:none;opacity:0;transition:opacity .2s}
 #toast.on{opacity:1}
 #hint{position:fixed;z-index:3;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);text-align:center;color:var(--muted);font-family:var(--f-display);letter-spacing:.06em;pointer-events:none;transition:opacity .6s}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px}
+.tabs button{border:0;padding:10px 2px;font-size:13px;min-width:0}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+.dot{color:var(--accent);font-size:10px;vertical-align:middle}
+.tabs button[aria-selected="true"] .dot{color:var(--accent-ink)}
+.prog{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:6px}
+.prog i{display:block;height:100%;background:var(--accent)}
+.have{color:var(--ok)} .miss{color:var(--bad)} .need{color:var(--accent)}
+button.claim{background:var(--ok);border-color:var(--ok);color:var(--accent-ink)}
 .res{font-family:var(--f-display);font-size:28px;font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){#toast,#hint{transition:none}}
 </style>
@@ -102,7 +111,7 @@ const ITEMS={
 };
 const SHOP=["p9","smg","sg","vest1","med"];
 const RAR=["Commun","Peu commun","Rare","Épique"];
-const CAP=10, W=2400, H=2400, RAID_TIME=240, KEY="zone-grise-save";
+const W=2400, H=2400, RAID_TIME=240, KEY="zone-grise-save";
 const $=id=>document.getElementById(id);
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const pick=a=>a[Math.floor(Math.random()*a.length)];
@@ -112,17 +121,51 @@ const mk=k=>({k,u:uid()});
 const price=k=>Math.round(ITEMS[k].v*1.6);
 const bagUsed=b=>b.reduce((s,i)=>s+ITEMS[i.k].s,0);
 const fmtM=px=>Math.round(px/10)+" m";
-function desc(k){const d=ITEMS[k];
-  if(d.t==="wpn") return `${d.pel>1?d.pel+"×":""}${d.dmg} dég · ${String(d.rate).replace(".",",")} tirs/s · portée ${fmtM(d.range)}`;
+const valOf=it=>Math.round(ITEMS[it.k].v*(1+.3*(it.lv||0)));
+const nameOf=it=>ITEMS[it.k].n+(it.lv?" +"+it.lv:"");
+function wstat(it){const d=ITEMS[it.k], lv=it.lv||0; return {...d,dmg:Math.round(d.dmg*(1+.15*lv)),rate:+(d.rate*(1+.1*lv)).toFixed(1)}}
+const fmtRate=r=>String(r).replace(".",",");
+function desc(it){const d=ITEMS[it.k];
+  if(d.t==="wpn"){const w=wstat(it); return `${w.pel>1?w.pel+"×":""}${w.dmg} dég · ${fmtRate(w.rate)} tirs/s · portée ${fmtM(w.range)}`}
   if(d.t==="arm") return `−${d.red*100} % de dégâts subis`;
   if(d.t==="med") return "Rend 50 PV";
   return RAR[d.r];}
+
+/* ---------- progression ---------- */
+const UP={
+  bag:{n:"Sac à dos",lv:["10 places","14 places","18 places"],cost:[{cr:600,it:{wires:2}},{cr:1800,it:{hdd:2,gpu:1}}]},
+  meds:{n:"Poche à trousses",lv:["3 trousses","4 trousses","5 trousses"],cost:[{cr:300,it:{pills:2}},{cr:900,it:{pills:3,watch:1}}]},
+  hp:{n:"Entraînement",lv:["100 PV","125 PV","150 PV"],cost:[{cr:500,it:{batt:3}},{cr:1500,it:{gold:1,pills:2}}]}};
+const BENCH=[{cr:250,it:{scrap:3}},{cr:700,it:{wires:2,hdd:1}}];
+const cap=()=>[10,14,18][S.up.bag], medMax=()=>3+S.up.meds, maxHp=()=>[100,125,150][S.up.hp];
+const count=k=>S.stash.filter(i=>i.k===k).length;
+const canPay=c=>S.credits>=c.cr&&Object.entries(c.it).every(([k,n])=>count(k)>=n);
+function pay(c){S.credits-=c.cr; for(const [k,n] of Object.entries(c.it)) for(let j=0;j<n;j++) S.stash.splice(S.stash.findIndex(i=>i.k===k),1)}
+const costTxt=c=>`${c.cr} cr`+Object.entries(c.it).map(([k,n])=>` · ${n} × ${ITEMS[k].n} <span class="${count(k)>=n?"have":"miss"}">(${Math.min(count(k),n)}/${n})</span>`).join("");
+const QBRING=["wires","batt","pills","watch","hdd","gpu","gold"];
+function newQuest(){const lvl=Math.min(3,Math.floor(S.st.ext/3)), taken=new Set(S.q.map(q=>q.t+(q.k||"")));
+  for(let t=0;t<40;t++){const ty=pick(["bring","bring","kills","violet","haul"]); let q;
+    if(ty==="bring"){const k=pick(QBRING.filter(k=>ITEMS[k].r<=Math.min(2,lvl+1))), n=ITEMS[k].r>=2?1:2+Math.floor(Math.random()*2); q={t:ty,k,n,cr:Math.round(ITEMS[k].v*n*1.7/10)*10}}
+    else if(ty==="kills"){const n=[4,6,8,10][lvl]; q={t:ty,n,cr:n*45}}
+    else if(ty==="violet"){const n=[1,2,2,3][lvl]; q={t:ty,n,cr:n*260}}
+    else {const n=[300,600,1000,1600][lvl]; q={t:ty,n,cr:Math.round(n*.5)}}
+    if(taken.has(q.t+(q.k||""))) continue;
+    if(Math.random()<.25) q.rew=pick(Object.keys(ITEMS).filter(k=>(ITEMS[k].t==="wpn"||ITEMS[k].t==="arm")&&ITEMS[k].r>=1&&ITEMS[k].r<=lvl+1));
+    return {u:uid(),have:0,...q}}
+  return {u:uid(),have:0,t:"kills",n:5,cr:225}}
+function qInfo(q){
+  if(q.t==="bring"){const h=count(q.k); return {txt:`Livrer ${q.n} × ${ITEMS[q.k].n}`,h:Math.min(h,q.n),n:q.n,done:h>=q.n,act:"Livrer"}}
+  if(q.t==="kills") return {txt:`Éliminer ${q.n} ennemis et s'extraire`,h:Math.min(q.have,q.n),n:q.n,done:q.have>=q.n,act:"Réclamer"};
+  if(q.t==="violet") return {txt:`Fouiller ${q.n} caisse${q.n>1?"s":""} violette${q.n>1?"s":""} et s'extraire`,h:Math.min(q.have,q.n),n:q.n,done:q.have>=q.n,act:"Réclamer"};
+  return {txt:`S'extraire avec au moins ${q.n} cr de butin en un seul raid`,h:q.have?1:0,n:1,done:!!q.have,act:"Réclamer"}}
+function norm(){S.up=S.up||{bag:0,meds:0,hp:0}; S.q=S.q||[]; while(S.q.length<3) S.q.push(newQuest()); S.lo.meds=Math.min(S.lo.meds,medMax())}
 
 /* ---------- save ---------- */
 const fresh=()=>({credits:250,stash:[],lo:{w:null,a:null,meds:0},st:{raids:0,ext:0,dead:0,best:0}});
 let S=fresh(), dbRef=null, chain=Promise.resolve(), mode="stash";
 function valid(s){return s&&Array.isArray(s.stash)&&s.lo&&s.st&&typeof s.credits==="number"}
 try{const l=JSON.parse(localStorage.getItem(KEY)); if(valid(l)) S=l;}catch(e){}
+norm();
 function save(){
   try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
   if(dbRef){const snap=JSON.stringify(S); chain=chain.then(()=>dbRef.set({save:snap,at:Date.now()})).catch(()=>{});}
@@ -140,47 +183,89 @@ function save(){
 }catch(e){}})();
 
 /* ---------- stash ---------- */
+let tab="raid"; try{tab=localStorage.getItem(KEY+"-tab")||"raid"}catch(e){}
 function row(it,btns,extra=""){const d=ITEMS[it.k];
-  return `<div class="item"><div class="nm"><b style="color:var(--r${d.r})">${d.n}</b><small>${extra||desc(it.k)}</small></div>${btns}</div>`;}
-function renderStash(){
-  mode="stash";
-  const lo=S.lo, meds=S.stash.filter(i=>i.k==="med").length;
-  const others=S.stash.filter(i=>i.k!=="med").sort((a,b)=>ITEMS[b.k].v-ITEMS[a.k].v);
-  const stashVal=S.stash.reduce((s,i)=>s+ITEMS[i.k].v,0);
-  $("stash").innerHTML=`<div class="wrap">
-    <div class="top"><div><div class="lbl">Planque</div><h1>Zone Grise</h1></div>
-      <div style="text-align:right"><div class="lbl">Crédits</div><div class="cr">${S.credits} cr</div></div></div>
-    <div class="card"><div class="lbl">Ce que tu emportes</div>
+  return `<div class="item"><div class="nm"><b style="color:var(--r${d.r})">${nameOf(it)}</b><small>${extra||desc(it)}</small></div>${btns}</div>`;}
+function needed(){const n=new Map(), add=(c,why)=>{for(const k in c.it) if(!n.has(k)) n.set(k,why)};
+  for(const q of S.q) if(q.t==="bring") n.set(q.k,"contrat");
+  for(const k in UP) if(S.up[k]<2) add(UP[k].cost[S.up[k]],"atelier");
+  if(S.lo.w&&(S.lo.w.lv||0)<2) add(BENCH[S.lo.w.lv||0],"atelier");
+  return n}
+function tabRaid(){
+  const lo=S.lo, meds=count("med"), need=needed();
+  const others=S.stash.filter(i=>i.k!=="med").sort((a,b)=>valOf(b)-valOf(a));
+  const stashVal=S.stash.reduce((s,i)=>s+valOf(i),0);
+  return `<div class="card"><div class="lbl">Ce que tu emportes</div>
       ${lo.w?row(lo.w,`<div class="btns"><button data-a="unw">Retirer</button></div>`):row({k:"rusty"},"","Kit gratuit, donné si tu n'as pas d'arme")}
       ${lo.a?row(lo.a,`<div class="btns"><button data-a="una">Retirer</button></div>`):`<div class="item"><div class="nm"><b>Pas de gilet</b><small>Dégâts subis normaux</small></div></div>`}
-      <div class="item"><div class="nm"><b>Trousses de soin : ${lo.meds} / 3</b><small>${meds} en planque</small></div>
-        <div class="btns"><button data-a="medm" ${lo.meds?"":"disabled"} aria-label="Laisser une trousse">−</button><button data-a="medp" ${meds&&lo.meds<3?"":"disabled"} aria-label="Prendre une trousse">+</button></div></div>
+      <div class="item"><div class="nm"><b>Trousses de soin : ${lo.meds} / ${medMax()}</b><small>${meds} en planque · ${maxHp()} PV · sac de ${cap()} places</small></div>
+        <div class="btns"><button data-a="medm" ${lo.meds?"":"disabled"} aria-label="Laisser une trousse">−</button><button data-a="medp" ${meds&&lo.meds<medMax()?"":"disabled"} aria-label="Prendre une trousse">+</button></div></div>
       <p class="note">Si tu meurs, tu perds tout ce qui est ici et tout ce qu'il y a dans ton sac.</p>
     </div>
     <button class="go" data-a="raid">Partir en raid</button>
     <div class="card"><div class="top"><div class="lbl">Planque · ${S.stash.length} objets</div><div class="val">${stashVal} cr</div></div>
-      ${others.length?others.map(i=>row(i,`<div class="btns">${ITEMS[i.k].t==="wpn"||ITEMS[i.k].t==="arm"?`<button data-a="eq" data-u="${i.u}">Équiper</button>`:""}<button data-a="sell" data-u="${i.u}">${ITEMS[i.k].v} cr</button></div>`)).join("")
+      ${others.length?others.map(i=>row(i,`<div class="btns">${ITEMS[i.k].t==="wpn"||ITEMS[i.k].t==="arm"?`<button data-a="eq" data-u="${i.u}">Équiper</button>`:""}<button data-a="sell" data-u="${i.u}">${valOf(i)} cr</button></div>`,
+          need.has(i.k)?`${desc(i)} · <span class="need">utile : ${need.get(i.k)}</span>`:"")).join("")
         :`<p class="empty">Rien pour l'instant. Le loot ramené d'un raid arrive ici.</p>`}
       ${meds?row({k:"med"},`<div class="btns"><button data-a="sellmed">${ITEMS.med.v} cr</button></div>`,`${meds} en stock · Rend 50 PV`):""}
+    </div>`}
+function tabQuest(){
+  return `<div class="card"><div class="lbl">Contrats du marchand</div>
+    ${S.q.map(q=>{const f=qInfo(q);
+      return `<div class="item"><div class="nm"><b>${f.txt}</b><small>Récompense : ${q.cr} cr${q.rew?" + "+ITEMS[q.rew].n:""}</small>
+        <div class="prog" aria-label="${f.h} sur ${f.n}"><i style="width:${f.h/f.n*100}%"></i></div></div>
+        <div class="btns">${f.done?`<button class="claim" data-a="claim" data-q="${q.u}">${f.act}</button>`:`<button data-a="reroll" data-q="${q.u}" ${S.credits>=40?"":"disabled"}>Changer · 40 cr</button>`}</div></div>`}).join("")}
+    <p class="note">Les ennemis éliminés et les caisses fouillées ne comptent que si tu t'extrais vivant.</p></div>`}
+function tabShop(){
+  const w=S.lo.w, lv=w?w.lv||0:0;
+  let bench;
+  if(!w) bench=`<p class="empty">Équipe une arme dans l'onglet Raid pour l'améliorer.</p>`;
+  else if(lv>=2) bench=row(w,`<span class="val">Max</span>`);
+  else {const nx=wstat({k:w.k,lv:lv+1}), cur=wstat(w), c=BENCH[lv];
+    bench=`<div class="item"><div class="nm"><b style="color:var(--r${ITEMS[w.k].r})">${nameOf(w)} → +${lv+1}</b>
+      <small>Dégâts ${cur.dmg} → ${nx.dmg} · cadence ${fmtRate(cur.rate)} → ${fmtRate(nx.rate)}</small><small>${costTxt(c)}</small></div>
+      <div class="btns"><button data-a="bench" ${canPay(c)?"":"disabled"}>Améliorer</button></div></div>`}
+  return `<div class="card"><div class="lbl">Améliorations de la planque</div>
+    ${Object.entries(UP).map(([k,u])=>{const l=S.up[k];
+      return `<div class="item"><div class="nm"><b>${u.n} · ${u.lv[l]}</b><small>${l<2?`Suivant : ${u.lv[l+1]}`:"Niveau maximum"}</small>${l<2?`<small>${costTxt(u.cost[l])}</small>`:""}</div>
+        <div class="btns">${l<2?`<button data-a="up" data-k="${k}" ${canPay(u.cost[l])?"":"disabled"}>Améliorer</button>`:`<span class="val">Max</span>`}</div></div>`}).join("")}
     </div>
-    <div class="card"><div class="lbl">Marchand</div>
-      ${SHOP.map(k=>row({k},`<div class="btns"><button data-a="buy" data-k="${k}" ${S.credits>=price(k)?"":"disabled"}>${price(k)} cr</button></div>`)).join("")}
-    </div>
+    <div class="card"><div class="lbl">Établi · arme équipée</div>${bench}</div>`}
+function tabTrade(){
+  return `<div class="card"><div class="lbl">Marchand</div>
+    ${SHOP.map(k=>row({k},`<div class="btns"><button data-a="buy" data-k="${k}" ${S.credits>=price(k)?"":"disabled"}>${price(k)} cr</button></div>`)).join("")}
+    <p class="note">Les objets de valeur ne s'achètent pas : il faut les trouver en raid.</p></div>`}
+function renderStash(){
+  mode="stash"; norm();
+  const upReady=Object.keys(UP).some(k=>S.up[k]<2&&canPay(UP[k].cost[S.up[k]]))||(S.lo.w&&(S.lo.w.lv||0)<2&&canPay(BENCH[S.lo.w.lv||0]));
+  const tabs=[["raid","Raid",false],["quest","Contrats",S.q.some(q=>qInfo(q).done)],["shop","Atelier",upReady],["trade","Marchand",false]];
+  const body={raid:tabRaid,quest:tabQuest,shop:tabShop,trade:tabTrade}[tab]||tabRaid;
+  $("stash").innerHTML=`<div class="wrap">
+    <div class="top"><div><div class="lbl">Planque</div><h1>Zone Grise</h1></div>
+      <div style="text-align:right"><div class="lbl">Crédits</div><div class="cr">${S.credits} cr</div></div></div>
+    <div class="tabs" role="tablist">${tabs.map(([id,n,dot])=>`<button role="tab" data-tab="${id}" aria-selected="${tab===id}">${n}${dot?` <span class="dot" aria-label="action possible">●</span>`:""}</button>`).join("")}</div>
+    ${body()}
     <p class="note">${S.st.raids} raids · ${S.st.ext} extractions · ${S.st.dead} morts · meilleur butin ${S.st.best} cr · sauvegarde ${dbRef?"liée à ton compte":"sur cet appareil"} · graphismes Kenney (CC0)</p>
   </div>`;
 }
 $("stash").addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.tab){tab=b.dataset.tab; try{localStorage.setItem(KEY+"-tab",tab)}catch(err){} renderStash(); return}
   const a=b.dataset.a, lo=S.lo, take=u=>{const i=S.stash.findIndex(x=>x.u===u); return i<0?null:S.stash.splice(i,1)[0]};
   if(a==="raid") return startRaid();
   if(a==="unw"){S.stash.push(lo.w); lo.w=null}
   if(a==="una"){S.stash.push(lo.a); lo.a=null}
-  if(a==="medp"){const it=S.stash.find(i=>i.k==="med"); if(it){take(it.u); lo.meds++}}
+  if(a==="medp"){const it=S.stash.find(i=>i.k==="med"); if(it&&lo.meds<medMax()){take(it.u); lo.meds++}}
   if(a==="medm"&&lo.meds){lo.meds--; S.stash.push(mk("med"))}
   if(a==="eq"){const it=take(b.dataset.u); if(it){const slot=ITEMS[it.k].t==="wpn"?"w":"a"; if(lo[slot]) S.stash.push(lo[slot]); lo[slot]=it}}
-  if(a==="sell"){const it=take(b.dataset.u); if(it) S.credits+=ITEMS[it.k].v}
+  if(a==="sell"){const it=take(b.dataset.u); if(it) S.credits+=valOf(it)}
   if(a==="sellmed"){const it=S.stash.find(i=>i.k==="med"); if(it){take(it.u); S.credits+=ITEMS.med.v}}
   if(a==="buy"){const k=b.dataset.k; if(S.credits>=price(k)){S.credits-=price(k); S.stash.push(mk(k))}}
+  if(a==="up"){const k=b.dataset.k, l=S.up[k]; if(l<2&&canPay(UP[k].cost[l])){pay(UP[k].cost[l]); S.up[k]++; toast(UP[k].n+" : "+UP[k].lv[S.up[k]])}}
+  if(a==="bench"&&lo.w){const l=lo.w.lv||0; if(l<2&&canPay(BENCH[l])){pay(BENCH[l]); lo.w.lv=l+1; toast(nameOf(lo.w)+" prêt")}}
+  if(a==="claim"){const i=S.q.findIndex(q=>q.u===b.dataset.q), q=S.q[i];
+    if(q&&qInfo(q).done){if(q.t==="bring") pay({cr:0,it:{[q.k]:q.n}}); S.credits+=q.cr; if(q.rew) S.stash.push(mk(q.rew)); S.q.splice(i,1); toast("Contrat payé : +"+q.cr+" cr"+(q.rew?" + "+ITEMS[q.rew].n:""))}}
+  if(a==="reroll"&&S.credits>=40){const i=S.q.findIndex(q=>q.u===b.dataset.q); if(i>=0){S.credits-=40; S.q.splice(i,1)}}
   save(); renderStash();
 });
 
@@ -273,7 +358,7 @@ function rollItem(d){
 /* ---------- raid ---------- */
 function spawnEnemy(x,y,aggro=false){const gun=Math.random()<.32; R.enemies.push({x,y,gun,hp:gun?55:42,max:gun?55:42,aggro,wx:0,wy:0,wt:0,cd:rnd(.5,1.5),hit:0})}
 function startRaid(){
-  R={walls:[],crates:[],enemies:[],bullets:[],ebul:[],pick:[],exits:[],parts:[],cas:[],bag:[],t:RAID_TIME,spawnT:24,ext:0,toastT:0,shake:0,flash:0};
+  R={walls:[],crates:[],enemies:[],bullets:[],ebul:[],pick:[],exits:[],parts:[],cas:[],bag:[],t:RAID_TIME,spawnT:24,ext:0,toastT:0,shake:0,flash:0,qp:{v:0,k:0}};
   R.walls.push({x:-40,y:-40,w:W+80,h:40},{x:-40,y:H,w:W+80,h:40},{x:-40,y:0,w:40,h:H},{x:W,y:0,w:40,h:H});
   R.bld=genBuildings();
   for(let i=0;i<22;i++){const x=rnd(100,W-300), y=rnd(100,H-300), k=Math.random(), w=k<.45?rnd(120,260):k<.9?24:rnd(60,120), h=k<.45?24:k<.9?rnd(120,260):rnd(60,120);
@@ -286,7 +371,7 @@ function startRaid(){
   R.exits=[e1,e2];
   const sp=freePt(30,(x,y)=>out(x,y)&&Math.min(...R.exits.map(e=>Math.hypot(x-e.x,y-e.y)))>1100);
   const wpn=S.lo.w||mk("rusty");
-  R.p={x:sp.x,y:sp.y,hp:100,max:100,cd:0,face:0,wpn,arm:S.lo.a,meds:S.lo.meds,hit:0,still:0};
+  R.p={x:sp.x,y:sp.y,hp:maxHp(),max:maxHp(),cd:0,face:0,wpn,arm:S.lo.a,meds:S.lo.meds,hit:0,still:0};
   const rooms=R.bld.flatMap(b=>b.rooms), far=(c,m)=>c&&Math.hypot(c.x-sp.x,c.y-sp.y)>m;
   const inRoom=pad=>{for(let t=0;t<60;t++){const r=pick(rooms), x=rnd(r.x+pad,r.x+r.w-pad), y=rnd(r.y+pad,r.y+r.h-pad); if(!inWall(x,y,pad)) return {x,y}} return null};
   for(let i=0;i<18;i++){let c=rooms.length&&Math.random()<.75?inRoom(30):null; if(!far(c,200)) c=freePt(30,(x,y)=>Math.hypot(x-sp.x,y-sp.y)>260);
@@ -313,13 +398,13 @@ $("bHeal").addEventListener("click",()=>{if(mode==="raid") heal()});
 $("bBag").addEventListener("click",()=>{if(mode==="raid") openBag()});
 
 function update(dt){
-  const p=R.p, m=moveVec(), moving=m.x!==0||m.y!==0, wd=ITEMS[p.wpn.k];
+  const p=R.p, m=moveVec(), moving=m.x!==0||m.y!==0, wd=wstat(p.wpn);
   p.x+=m.x*175*dt; p.y+=m.y*175*dt; collide(p,13);
   if(moving) p.face=Math.atan2(m.y,m.x);
   p.still=moving?0:p.still+dt; p.cd-=dt; p.hit-=dt; R.shake-=dt;
   for(const c of R.crates){if(c.open) continue; const near=Math.hypot(c.x-p.x,c.y-p.y)<48;
     c.prog=near&&!moving?c.prog+dt:0;
-    if(c.prog>=.8){c.open=true; const n=1+Math.floor(Math.random()*2)+(c.d>.55?1:0);
+    if(c.prog>=.8){c.open=true; if(c.d>.62) R.qp.v++; const n=1+Math.floor(Math.random()*2)+(c.d>.55?1:0);
       for(let i=0;i<n;i++){const a=rnd(0,6.28); R.pick.push({x:c.x+Math.cos(a)*24,y:c.y+Math.sin(a)*24,it:rollItem(c.d)})} burst(c.x,c.y,C.accent,10,80)}}
   if(!moving&&p.still>.08&&p.cd<=0){
     let best=null,bd=wd.range;
@@ -333,7 +418,7 @@ function update(dt){
     if(Math.hypot(s.vx,s.vy)<6){const g=R.decal.g; g.save(); g.translate(s.x,s.y); g.rotate(s.r); g.fillStyle="#9c7a35"; g.fillRect(-3,-1.2,6,2.4); g.restore(); R.cas.splice(i,1)}}
   for(let i=R.pick.length-1;i>=0;i--){const k=R.pick[i], d=Math.hypot(k.x-p.x,k.y-p.y);
     if(k.nop){if(d>52) k.nop=false; continue}
-    if(d<26){const s=ITEMS[k.it.k].s; if(bagUsed(R.bag)+s<=CAP){R.bag.push(k.it); R.pick.splice(i,1); toast("+ "+ITEMS[k.it.k].n); updHud()} else if(R.toastT<=0){toast("Sac plein : ouvre le sac pour jeter un objet"); R.toastT=2.5}}}
+    if(d<26){const s=ITEMS[k.it.k].s; if(bagUsed(R.bag)+s<=cap()){R.bag.push(k.it); R.pick.splice(i,1); toast("+ "+ITEMS[k.it.k].n); updHud()} else if(R.toastT<=0){toast("Sac plein : ouvre le sac pour jeter un objet"); R.toastT=2.5}}}
   R.toastT-=dt; R.flowT-=dt; if(R.flowT<=0){R.flowT=.35; updFlow()}
   for(const e of R.enemies){
     const dx=p.x-e.x, dy=p.y-e.y, d=Math.hypot(dx,dy); e.cd-=dt; e.hit-=dt;
@@ -353,7 +438,7 @@ function update(dt){
     if(b.life<=0||inWall(b.x,b.y)){R.bullets.splice(i,1); continue}
     const e=R.enemies.find(e=>Math.hypot(e.x-b.x,e.y-b.y)<15);
     if(e){e.hp-=b.dmg; e.hit=.1; e.aggro=true; R.bullets.splice(i,1); burst(b.x,b.y,C.bad,4,90); blood(b.x+b.vx*.02,b.y+b.vy*.02,3,false);
-      if(e.hp<=0){R.enemies.splice(R.enemies.indexOf(e),1); burst(e.x,e.y,C.bad,14,160); blood(e.x,e.y,14,true); if(Math.random()<.45) R.pick.push({x:e.x,y:e.y,it:rollItem(depth(e.x,e.y))})}}}
+      if(e.hp<=0){R.enemies.splice(R.enemies.indexOf(e),1); R.qp.k++; burst(e.x,e.y,C.bad,14,160); blood(e.x,e.y,14,true); if(Math.random()<.45) R.pick.push({x:e.x,y:e.y,it:rollItem(depth(e.x,e.y))})}}}
   for(let i=R.ebul.length-1;i>=0;i--){const b=R.ebul[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt;
     if(b.life<=0||inWall(b.x,b.y)){R.ebul.splice(i,1); continue}
     if(Math.hypot(b.x-p.x,b.y-p.y)<14){R.ebul.splice(i,1); hurt(b.dmg); if(mode!=="raid") return}}
@@ -367,20 +452,20 @@ function updHud(){const p=R.p, f=clamp(p.hp/p.max,0,1);
   $("hpfill").style.width=f*100+"%"; $("hpfill").style.background=f<.35?C.bad:C.ok;
   $("hptxt").textContent=Math.ceil(Math.max(0,p.hp))+" PV";
   const s=Math.max(0,Math.ceil(R.t)); $("timer").textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); $("timer").classList.toggle("warn",s<=60);
-  $("bagc").textContent="Sac "+bagUsed(R.bag)+"/"+CAP;
+  $("bagc").textContent="Sac "+bagUsed(R.bag)+"/"+cap();
   $("bHeal").textContent="Soin ("+(p.meds+R.bag.filter(i=>i.k==="med").length)+")";
 }
 
 /* ---------- bag ---------- */
 function openBag(){mode="bag"; js=null; renderBag(); $("bag").hidden=false}
 function closeBag(){$("bag").hidden=true; mode="raid"; last=performance.now()}
-function renderBag(){const p=R.p, val=R.bag.reduce((s,i)=>s+ITEMS[i.k].v,0);
+function renderBag(){const p=R.p, val=R.bag.reduce((s,i)=>s+valOf(i),0);
   $("bag").innerHTML=`<div class="wrap">
-    <div class="top"><h2>Sac ${bagUsed(R.bag)} / ${CAP}</h2><div class="val">${val} cr</div></div>
+    <div class="top"><h2>Sac ${bagUsed(R.bag)} / ${cap()}</h2><div class="val">${val} cr</div></div>
     <div class="card"><div class="lbl">Équipé</div>${row(p.wpn,"")}${p.arm?row(p.arm,""):""}
       <div class="item"><div class="nm"><b>${Math.ceil(p.hp)} / ${p.max} PV</b><small>${p.meds} trousse(s) sur toi</small></div></div></div>
     <div class="card">${R.bag.length?R.bag.map(i=>{const t=ITEMS[i.k].t;
-      return row(i,`<div class="btns">${t==="wpn"||t==="arm"?`<button data-a="eq" data-u="${i.u}">Équiper</button>`:""}${t==="med"?`<button data-a="use" data-u="${i.u}">Utiliser</button>`:""}<button data-a="drop" data-u="${i.u}">Jeter</button></div>`,`${desc(i.k)} · ${ITEMS[i.k].s} place${ITEMS[i.k].s>1?"s":""} · ${ITEMS[i.k].v} cr`)}).join("")
+      return row(i,`<div class="btns">${t==="wpn"||t==="arm"?`<button data-a="eq" data-u="${i.u}">Équiper</button>`:""}${t==="med"?`<button data-a="use" data-u="${i.u}">Utiliser</button>`:""}<button data-a="drop" data-u="${i.u}">Jeter</button></div>`,`${desc(i)} · ${ITEMS[i.k].s} place${ITEMS[i.k].s>1?"s":""} · ${valOf(i)} cr`)}).join("")
       :`<p class="empty">Sac vide. Arrête-toi près d'une caisse pour la fouiller.</p>`}</div>
     <p class="note">Les caisses violettes, au centre de la carte, contiennent le meilleur loot. Les tirs font du bruit et attirent les ennemis.</p>
     <button class="go" data-a="back">Reprendre</button></div>`;
@@ -400,16 +485,20 @@ function endRaid(ok,why){
   $("hud").hidden=true; $("act").hidden=true; $("hint").hidden=true; $("bag").hidden=true;
   let html;
   if(ok){
-    const gained=R.bag.filter(i=>i.k!=="rusty"), val=gained.reduce((s,i)=>s+ITEMS[i.k].v,0);
+    const gained=R.bag.filter(i=>i.k!=="rusty"), val=gained.reduce((s,i)=>s+valOf(i),0);
     S.stash.push(...gained); S.lo.w=p.wpn.k==="rusty"?null:p.wpn; S.lo.a=p.arm; S.lo.meds=p.meds;
     S.st.ext++; S.st.best=Math.max(S.st.best,val);
+    const before=new Set(S.q.filter(q=>qInfo(q).done).map(q=>q.u));
+    for(const q of S.q){if(q.t==="kills") q.have+=R.qp.k; if(q.t==="violet") q.have+=R.qp.v; if(q.t==="haul"&&val>=q.n) q.have=1}
+    const newly=S.q.filter(q=>qInfo(q).done&&!before.has(q.u));
     html=`<div class="lbl">Extraction réussie</div><h1 style="color:var(--ok)">Sorti vivant</h1><div class="res">+ ${val} cr de butin</div>
-      <div class="card">${gained.length?gained.map(i=>row(i,`<span class="val">${ITEMS[i.k].v} cr</span>`)).join(""):`<p class="empty">Sac vide, mais ton équipement est sauf.</p>`}</div>`;
+      ${newly.length?`<div class="card"><div class="lbl">Contrats remplis</div>${newly.map(q=>`<div class="item"><div class="nm"><b>${qInfo(q).txt}</b><small>${q.cr} cr à réclamer dans l'onglet Contrats</small></div></div>`).join("")}</div>`:""}
+      <div class="card">${gained.length?gained.map(i=>row(i,`<span class="val">${valOf(i)} cr</span>`)).join(""):`<p class="empty">Sac vide, mais ton équipement est sauf.</p>`}</div>`;
   } else {
-    const lost=[...(p.wpn.k!=="rusty"?[p.wpn]:[]),...(p.arm?[p.arm]:[]),...R.bag], val=lost.reduce((s,i)=>s+ITEMS[i.k].v,0)+p.meds*ITEMS.med.v;
+    const lost=[...(p.wpn.k!=="rusty"?[p.wpn]:[]),...(p.arm?[p.arm]:[]),...R.bag], val=lost.reduce((s,i)=>s+valOf(i),0)+p.meds*ITEMS.med.v;
     S.lo={w:null,a:null,meds:0}; S.st.dead++;
     html=`<div class="lbl">Raid perdu</div><h1 style="color:var(--bad)">${why}</h1><div class="res">− ${val} cr perdus</div>
-      <div class="card">${lost.length||p.meds?lost.map(i=>row(i,`<span class="val">${ITEMS[i.k].v} cr</span>`)).join("")+(p.meds?row({k:"med"},"",p.meds+" trousse(s)"):""):`<p class="empty">Tu n'avais rien à perdre. Le kit gratuit t'attend.</p>`}</div>`;
+      <div class="card">${lost.length||p.meds?lost.map(i=>row(i,`<span class="val">${valOf(i)} cr</span>`)).join("")+(p.meds?row({k:"med"},"",p.meds+" trousse(s)"):""):`<p class="empty">Tu n'avais rien à perdre. Le kit gratuit t'attend.</p>`}</div>`;
   }
   save();
   $("end").innerHTML=`<div class="wrap">${html}<button class="go" data-a="home">Retour à la planque</button></div>`;
