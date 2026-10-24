@@ -189,7 +189,8 @@ const cv=$("cv"), ctx=cv.getContext("2d");
 const css=getComputedStyle(document.documentElement), C={};
 ["ground","wall","wall-top","fg","muted","accent","ok","bad","enemy2","r0","r1","r2","r3","line"].forEach(k=>C[k]=css.getPropertyValue("--"+k).trim());
 let dpr=1, vw=0, vh=0, zoom=1;
-function resize(){dpr=Math.min(2,window.devicePixelRatio||1); vw=innerWidth; vh=innerHeight; cv.width=vw*dpr; cv.height=vh*dpr; zoom=Math.min(1,Math.min(vw,vh)/560)}
+const shade=document.createElement("canvas"), sg=shade.getContext("2d");
+function resize(){dpr=Math.min(2,window.devicePixelRatio||1); vw=innerWidth; vh=innerHeight; cv.width=shade.width=vw*dpr; cv.height=shade.height=vh*dpr; zoom=Math.min(1,Math.min(vw,vh)/560)}
 addEventListener("resize",resize); resize();
 
 /* ---------- input ---------- */
@@ -231,10 +232,11 @@ function rollItem(d){
 /* ---------- raid ---------- */
 function spawnEnemy(x,y,aggro=false){const gun=Math.random()<.32; R.enemies.push({x,y,gun,hp:gun?55:42,max:gun?55:42,aggro,wx:0,wy:0,wt:0,cd:rnd(.5,1.5),hit:0})}
 function startRaid(){
-  R={walls:[],crates:[],enemies:[],bullets:[],ebul:[],pick:[],exits:[],parts:[],bag:[],t:RAID_TIME,spawnT:24,ext:0,toastT:0,shake:0};
+  R={walls:[],crates:[],enemies:[],bullets:[],ebul:[],pick:[],exits:[],parts:[],cas:[],bag:[],t:RAID_TIME,spawnT:24,ext:0,toastT:0,shake:0,flash:0};
   R.walls.push({x:-40,y:-40,w:W+80,h:40},{x:-40,y:H,w:W+80,h:40},{x:-40,y:0,w:40,h:H},{x:W,y:0,w:40,h:H});
   for(let i=0;i<60;i++){const x=rnd(100,W-300), y=rnd(100,H-300), k=Math.random();
     if(k<.35) R.walls.push({x,y,w:rnd(140,340),h:26}); else if(k<.7) R.walls.push({x,y,w:26,h:rnd(140,340)}); else R.walls.push({x,y,w:rnd(70,170),h:rnd(70,170)})}
+  R.decal=makeDecal();
   const e1=freePt(70,(x,y)=>Math.min(x,y,W-x,H-y)<260);
   const e2=freePt(70,(x,y)=>Math.min(x,y,W-x,H-y)<260&&Math.hypot(x-e1.x,y-e1.y)>1400);
   R.exits=[e1,e2];
@@ -252,7 +254,10 @@ function startRaid(){
 function hideHint(){$("hint").style.opacity=0}
 function toast(msg){const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"),1800)}
 function noise(x,y,rad){for(const e of R.enemies) if(Math.hypot(e.x-x,e.y-y)<rad) e.aggro=true}
-function burst(x,y,col,n=8,sp=140){for(let i=0;i<n;i++){const a=rnd(0,6.28), s=rnd(30,sp); R.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.2,.5),col})}}
+function burst(x,y,col,n=8,sp=140,glow=false){for(let i=0;i<n;i++){const a=rnd(0,6.28), s=rnd(30,sp); R.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.2,.5),col,glow})}}
+function blood(x,y,n,big){const g=R.decal.g;
+  for(let i=0;i<n;i++){const a=rnd(0,6.28), d=big?rnd(0,24):rnd(4,18), r=big?rnd(3,11):rnd(1.5,4);
+    g.fillStyle=`rgba(${Math.round(rnd(85,125))},12,16,${rnd(.55,.85).toFixed(2)})`; g.beginPath(); g.arc(x+Math.cos(a)*d,y+Math.sin(a)*d,r,0,6.28); g.fill()}}
 function hurt(d){const p=R.p; const dmg=d*(1-(p.arm?ITEMS[p.arm.k].red:0)); p.hp-=dmg; p.hit=.15; R.shake=.12; if(p.hp<=0) endRaid(false,"Tu es mort.")}
 function heal(){const p=R.p; if(p.hp>=p.max) return toast("PV déjà au maximum");
   if(p.meds>0) p.meds--; else {const i=R.bag.findIndex(x=>x.k==="med"); if(i<0) return toast("Aucune trousse de soin"); R.bag.splice(i,1)}
@@ -274,7 +279,11 @@ function update(dt){
     for(const e of R.enemies){const d=Math.hypot(e.x-p.x,e.y-p.y); if(d<bd&&los(p,e)){bd=d; best=e}}
     if(best){const a0=Math.atan2(best.y-p.y,best.x-p.x); p.face=a0; p.cd=1/wd.rate;
       for(let i=0;i<wd.pel;i++){const a=a0+rnd(-wd.spr,wd.spr), sp=680; R.bullets.push({x:p.x+Math.cos(a)*16,y:p.y+Math.sin(a)*16,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:wd.range/sp*1.1,dmg:wd.dmg})}
-      burst(p.x+Math.cos(a0)*18,p.y+Math.sin(a0)*18,C.accent,3,60); noise(p.x,p.y,wd.noise)}}
+      burst(p.x+Math.cos(a0)*18,p.y+Math.sin(a0)*18,C.accent,3,60,true); noise(p.x,p.y,wd.noise); R.flash=.07;
+      const ea=a0+1.57+rnd(-.3,.3), es=rnd(90,150); R.cas.push({x:p.x,y:p.y,vx:Math.cos(ea)*es,vy:Math.sin(ea)*es,r:rnd(0,6.28),vr:rnd(-18,18)})}}
+  R.flash-=dt;
+  for(let i=R.cas.length-1;i>=0;i--){const s=R.cas[i]; s.x+=s.vx*dt; s.y+=s.vy*dt; s.r+=s.vr*dt; const f=Math.pow(.015,dt); s.vx*=f; s.vy*=f; s.vr*=f;
+    if(Math.hypot(s.vx,s.vy)<6){const g=R.decal.g; g.save(); g.translate(s.x,s.y); g.rotate(s.r); g.fillStyle="#9c7a35"; g.fillRect(-3,-1.2,6,2.4); g.restore(); R.cas.splice(i,1)}}
   for(let i=R.pick.length-1;i>=0;i--){const k=R.pick[i], d=Math.hypot(k.x-p.x,k.y-p.y);
     if(k.nop){if(d>52) k.nop=false; continue}
     if(d<26){const s=ITEMS[k.it.k].s; if(bagUsed(R.bag)+s<=CAP){R.bag.push(k.it); R.pick.splice(i,1); toast("+ "+ITEMS[k.it.k].n); updHud()} else if(R.toastT<=0){toast("Sac plein : ouvre le sac pour jeter un objet"); R.toastT=2.5}}}
@@ -296,8 +305,8 @@ function update(dt){
   for(let i=R.bullets.length-1;i>=0;i--){const b=R.bullets[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt;
     if(b.life<=0||inWall(b.x,b.y)){R.bullets.splice(i,1); continue}
     const e=R.enemies.find(e=>Math.hypot(e.x-b.x,e.y-b.y)<15);
-    if(e){e.hp-=b.dmg; e.hit=.1; e.aggro=true; R.bullets.splice(i,1); burst(b.x,b.y,C.bad,4,90);
-      if(e.hp<=0){R.enemies.splice(R.enemies.indexOf(e),1); burst(e.x,e.y,C.bad,14,160); if(Math.random()<.45) R.pick.push({x:e.x,y:e.y,it:rollItem(depth(e.x,e.y))})}}}
+    if(e){e.hp-=b.dmg; e.hit=.1; e.aggro=true; R.bullets.splice(i,1); burst(b.x,b.y,C.bad,4,90); blood(b.x+b.vx*.02,b.y+b.vy*.02,3,false);
+      if(e.hp<=0){R.enemies.splice(R.enemies.indexOf(e),1); burst(e.x,e.y,C.bad,14,160); blood(e.x,e.y,14,true); if(Math.random()<.45) R.pick.push({x:e.x,y:e.y,it:rollItem(depth(e.x,e.y))})}}}
   for(let i=R.ebul.length-1;i>=0;i--){const b=R.ebul[i]; b.x+=b.vx*dt; b.y+=b.vy*dt; b.life-=dt;
     if(b.life<=0||inWall(b.x,b.y)){R.ebul.splice(i,1); continue}
     if(Math.hypot(b.x-p.x,b.y-p.y)<14){R.ebul.splice(i,1); hurt(b.dmg); if(mode!=="raid") return}}
@@ -362,52 +371,112 @@ function endRaid(ok,why){
 $("end").addEventListener("click",e=>{if(e.target.closest("button")){ $("end").hidden=true; $("stash").hidden=false; renderStash(); $("stash").scrollTop=0}});
 
 /* ---------- draw ---------- */
+const VR=560, FONT=css.getPropertyValue("--f-display");
 const crateCol=d=>d>.62?C.r3:d>.36?C.r2:C.r0;
+function noiseTile(base,n,lo,hi,seams){const c=document.createElement("canvas"); c.width=c.height=256; const g=c.getContext("2d");
+  g.fillStyle=base; g.fillRect(0,0,256,256);
+  for(let i=0;i<n;i++){g.fillStyle=Math.random()<.5?`rgba(255,255,255,${rnd(.01,lo).toFixed(3)})`:`rgba(0,0,0,${rnd(.04,hi).toFixed(3)})`; const s=rnd(1,2.8); g.fillRect(rnd(0,256),rnd(0,256),s,s)}
+  if(seams){g.fillStyle="rgba(0,0,0,.4)"; g.fillRect(0,0,256,2); g.fillRect(0,128,256,2); g.fillRect(0,0,2,256); g.fillRect(128,0,2,256);
+    g.fillStyle="rgba(255,255,255,.035)"; g.fillRect(0,2,256,1); g.fillRect(0,130,256,1); g.fillRect(2,0,1,256); g.fillRect(130,0,1,256)}
+  return ctx.createPattern(c,"repeat")}
+const groundPat=noiseTile("#1b1e21",2600,.05,.18,true), wallPat=noiseTile("rgba(0,0,0,0)",1800,.06,.25,false);
+function makeDecal(){const c=document.createElement("canvas"); c.width=W/2; c.height=H/2; const g=c.getContext("2d"); g.scale(.5,.5);
+  for(let i=0;i<150;i++){const x=rnd(0,W), y=rnd(0,H), r=rnd(30,150), gr=g.createRadialGradient(x,y,0,x,y,r), dirt=Math.random()<.5;
+    gr.addColorStop(0,dirt?"rgba(52,44,30,.35)":"rgba(0,0,0,.3)"); gr.addColorStop(1,"rgba(0,0,0,0)"); g.fillStyle=gr; g.fillRect(x-r,y-r,2*r,2*r)}
+  g.strokeStyle="rgba(0,0,0,.5)"; g.lineWidth=1.5;
+  for(let i=0;i<110;i++){let x=rnd(0,W), y=rnd(0,H), a=rnd(0,6.28); g.beginPath(); g.moveTo(x,y);
+    for(let j=0;j<7;j++){a+=rnd(-.8,.8); x+=Math.cos(a)*rnd(8,24); y+=Math.sin(a)*rnd(8,24); g.lineTo(x,y)} g.stroke()}
+  for(const w of R.walls) for(let i=0;i<(w.w+w.h)/14;i++){const s=rnd(2,7), side=Math.random()<.5, x=side?rnd(w.x-14,w.x+w.w+14):(Math.random()<.5?w.x-rnd(3,16):w.x+w.w+rnd(3,16)), y=side?(Math.random()<.5?w.y-rnd(3,16):w.y+w.h+rnd(3,16)):rnd(w.y-14,w.y+w.h+14);
+    g.fillStyle=Math.random()<.5?"rgba(74,79,86,.9)":"rgba(36,38,42,.9)"; g.fillRect(x,y,s,s*rnd(.5,1))}
+  return {c,g}}
+function visPoly(ox,oy){
+  const x0=ox-VR, x1=ox+VR, y0=oy-VR, y1=oy+VR, segs=[], pts=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+  segs.push([x0,y0,x1,y0],[x1,y0,x1,y1],[x1,y1,x0,y1],[x0,y1,x0,y0]);
+  for(const w of R.walls){if(w.x>x1||w.x+w.w<x0||w.y>y1||w.y+w.h<y0) continue; const a=w.x, b=w.y, c=w.x+w.w, d=w.y+w.h;
+    segs.push([a,b,c,b],[c,b,c,d],[c,d,a,d],[a,d,a,b]); pts.push([a,b],[c,b],[c,d],[a,d])}
+  const out=[];
+  for(const [px,py] of pts){const a0=Math.atan2(py-oy,px-ox);
+    for(const a of [a0-.0002,a0,a0+.0002]){const dx=Math.cos(a), dy=Math.sin(a); let best=Infinity;
+      for(const s of segs){const sdx=s[2]-s[0], sdy=s[3]-s[1], den=dx*sdy-dy*sdx; if(Math.abs(den)<1e-9) continue;
+        const qx=s[0]-ox, qy=s[1]-oy, t=(qx*sdy-qy*sdx)/den, u=(qx*dy-qy*dx)/den; if(t>0&&u>=0&&u<=1&&t<best) best=t}
+      if(best<Infinity) out.push({a,x:ox+dx*best,y:oy+dy*best})}}
+  return out.sort((p,q)=>p.a-q.a)}
+function polyPath(g,poly){g.beginPath(); poly.forEach((q,i)=>i?g.lineTo(q.x,q.y):g.moveTo(q.x,q.y)); g.closePath()}
+function glow(x,y,r,col,a){const g=ctx.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,col); g.addColorStop(1,"rgba(0,0,0,0)"); ctx.globalAlpha=a; ctx.fillStyle=g; ctx.fillRect(x-r,y-r,2*r,2*r); ctx.globalAlpha=1}
+function shadow(x,y,r){ctx.fillStyle="rgba(0,0,0,.4)"; ctx.beginPath(); ctx.ellipse(x+4,y+6,r,r*.8,0,0,6.28); ctx.fill()}
+function drawCrate(c){ctx.save(); ctx.translate(c.x,c.y); ctx.fillStyle="rgba(0,0,0,.4)"; ctx.fillRect(-11,-9,28,28);
+  ctx.fillStyle=c.open?"#3a2f22":"#6b5233"; ctx.fillRect(-14,-14,28,28);
+  ctx.strokeStyle=c.open?"#2a2219":"#4a3822"; ctx.lineWidth=2; ctx.strokeRect(-13,-13,26,26);
+  if(c.open){ctx.fillStyle="#17130e"; ctx.fillRect(-10,-10,20,20)}
+  else {ctx.beginPath(); ctx.moveTo(-13,-13); ctx.lineTo(13,13); ctx.moveTo(13,-13); ctx.lineTo(-13,13); ctx.stroke(); ctx.fillStyle=crateCol(c.d); ctx.fillRect(-14,-14,28,4)}
+  ctx.restore()}
+function drawPerson(x,y,a,body,head,gunLen,hit){shadow(x,y,13); ctx.save(); ctx.translate(x,y); ctx.rotate(a);
+  if(gunLen){ctx.fillStyle="#22262a"; ctx.fillRect(4,3,gunLen,5)}
+  ctx.fillStyle=hit?"#f4efe4":body; ctx.beginPath(); ctx.ellipse(0,0,10,15,0,0,6.28); ctx.fill();
+  ctx.fillStyle=hit?"#f4efe4":head; ctx.beginPath(); ctx.arc(2,0,7,0,6.28); ctx.fill(); ctx.restore()}
+function drawZombie(e,a){shadow(e.x,e.y,13); ctx.save(); ctx.translate(e.x,e.y); ctx.rotate(a);
+  ctx.fillStyle=e.hit>0?"#f4efe4":"#5b6b46"; ctx.fillRect(4,-12,13,5); ctx.fillRect(4,7,13,5);
+  ctx.fillStyle=e.hit>0?"#f4efe4":"#4a3b39"; ctx.beginPath(); ctx.ellipse(0,0,10,15,0,0,6.28); ctx.fill();
+  ctx.fillStyle=e.hit>0?"#f4efe4":"#7d8f5e"; ctx.beginPath(); ctx.arc(3,0,7,0,6.28); ctx.fill(); ctx.restore()}
 function draw(){
-  ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle=C.ground; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.setTransform(1,0,0,1,0,0); ctx.globalCompositeOperation="source-over"; ctx.fillStyle=C.ground; ctx.fillRect(0,0,cv.width,cv.height);
   if(!R) return;
   const p=R.p, sx=R.shake>0?rnd(-4,4):0, sy=R.shake>0?rnd(-4,4):0;
-  const cx=p.x-vw/2/zoom+sx, cy=p.y-vh/2/zoom+sy, k=dpr*zoom;
-  ctx.setTransform(k,0,0,k,-cx*k,-cy*k);
-  ctx.strokeStyle=C.line; ctx.globalAlpha=.35; ctx.lineWidth=1; ctx.beginPath();
-  for(let x=Math.floor(cx/100)*100;x<cx+vw/zoom;x+=100){ctx.moveTo(x,cy); ctx.lineTo(x,cy+vh/zoom)}
-  for(let y=Math.floor(cy/100)*100;y<cy+vh/zoom;y+=100){ctx.moveTo(cx,y); ctx.lineTo(cx+vw/zoom,y)}
-  ctx.stroke(); ctx.globalAlpha=1;
-  const tt=performance.now()/1000;
-  for(const e of R.exits){ctx.fillStyle=C.ok; ctx.globalAlpha=.12+.06*Math.sin(tt*3); ctx.beginPath(); ctx.arc(e.x,e.y,62,0,6.28); ctx.fill(); ctx.globalAlpha=1;
-    ctx.strokeStyle=C.ok; ctx.setLineDash([10,8]); ctx.lineWidth=2; ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle=C.ok; ctx.font="600 14px "+css.getPropertyValue("--f-display"); ctx.textAlign="center"; ctx.fillText("SORTIE",e.x,e.y+5)}
-  for(const c of R.crates){ctx.fillStyle=c.open?C.wall:C.ground; ctx.strokeStyle=c.open?C.line:crateCol(c.d); ctx.lineWidth=3;
-    ctx.fillRect(c.x-13,c.y-13,26,26); ctx.strokeRect(c.x-13,c.y-13,26,26); if(!c.open){ctx.beginPath(); ctx.moveTo(c.x-13,c.y); ctx.lineTo(c.x+13,c.y); ctx.stroke()}}
-  for(const q of R.pick){ctx.fillStyle=C["r"+ITEMS[q.it.k].r]; ctx.save(); ctx.translate(q.x,q.y); ctx.rotate(.785); ctx.fillRect(-6,-6,12,12); ctx.restore()}
-  for(const w of R.walls){ctx.fillStyle=C.wall; ctx.fillRect(w.x,w.y,w.w,w.h); ctx.fillStyle=C["wall-top"]; ctx.fillRect(w.x,w.y,w.w,4)}
-  for(const e of R.enemies){ctx.fillStyle=e.hit>0?C.fg:(e.gun?C.enemy2:C.bad); ctx.beginPath(); ctx.arc(e.x,e.y,14,0,6.28); ctx.fill();
-    if(e.gun){const a=Math.atan2(p.y-e.y,p.x-e.x); ctx.strokeStyle=C.enemy2; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.x+Math.cos(a)*22,e.y+Math.sin(a)*22); ctx.stroke()}
-    if(e.aggro){ctx.fillStyle=C.bad; ctx.fillRect(e.x-2,e.y-30,4,9)}
-    if(e.hp<e.max){ctx.fillStyle=C.ground; ctx.fillRect(e.x-15,e.y+19,30,4); ctx.fillStyle=C.bad; ctx.fillRect(e.x-15,e.y+19,30*e.hp/e.max,4)}}
-  ctx.lineWidth=3; ctx.strokeStyle=C.accent; ctx.beginPath();
-  for(const b of R.bullets){ctx.moveTo(b.x,b.y); ctx.lineTo(b.x-b.vx*.02,b.y-b.vy*.02)} ctx.stroke();
-  ctx.fillStyle=C.enemy2; for(const b of R.ebul){ctx.beginPath(); ctx.arc(b.x,b.y,4,0,6.28); ctx.fill()}
-  for(const q of R.parts){ctx.globalAlpha=clamp(q.life*3,0,1); ctx.fillStyle=q.col; ctx.fillRect(q.x-2,q.y-2,4,4)} ctx.globalAlpha=1;
-  if(p.arm){ctx.strokeStyle=C.r2; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x,p.y,17,0,6.28); ctx.stroke()}
-  ctx.fillStyle=p.hit>0?C.bad:C.accent; ctx.beginPath(); ctx.arc(p.x,p.y,13,0,6.28); ctx.fill();
-  ctx.strokeStyle=C.fg; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x+Math.cos(p.face)*21,p.y+Math.sin(p.face)*21); ctx.stroke();
-  // fog in screen space
-  ctx.setTransform(1,0,0,1,0,0);
-  const px=(p.x-cx)*k, py=(p.y-cy)*k, g=ctx.createRadialGradient(px,py,280*k,px,py,560*k);
-  g.addColorStop(0,"rgba(8,9,11,0)"); g.addColorStop(1,"rgba(8,9,11,.88)"); ctx.fillStyle=g; ctx.fillRect(0,0,cv.width,cv.height);
-  // progress rings
-  ctx.setTransform(k,0,0,k,-cx*k,-cy*k);
+  const cx=p.x-vw/2/zoom+sx, cy=p.y-vh/2/zoom+sy, k=dpr*zoom, ww=vw/zoom, wh=vh/zoom, tt=performance.now()/1000;
+  const world=g=>g.setTransform(k,0,0,k,-cx*k,-cy*k);
+  const poly=visPoly(p.x,p.y), seen=o=>Math.hypot(o.x-p.x,o.y-p.y)<VR&&los(p,o);
+  const near=R.walls.filter(w=>w.x<cx+ww+20&&w.x+w.w>cx-20&&w.y<cy+wh+20&&w.y+w.h>cy-20);
+  world(ctx);
+  ctx.fillStyle=groundPat; ctx.fillRect(cx,cy,ww,wh);
+  const sx0=clamp(cx,0,W), sy0=clamp(cy,0,H), sx1=clamp(cx+ww,0,W), sy1=clamp(cy+wh,0,H);
+  if(sx1>sx0&&sy1>sy0) ctx.drawImage(R.decal.c,sx0/2,sy0/2,(sx1-sx0)/2,(sy1-sy0)/2,sx0,sy0,sx1-sx0,sy1-sy0);
+  ctx.fillStyle="rgba(0,0,0,.45)"; for(const w of near) ctx.fillRect(w.x+7,w.y+9,w.w,w.h);
+  for(const c of R.crates) drawCrate(c);
+  for(const q of R.pick){ctx.fillStyle=C["r"+ITEMS[q.it.k].r]; ctx.save(); ctx.translate(q.x,q.y+Math.sin(tt*3+q.x)*1.5); ctx.rotate(.785); ctx.fillRect(-6,-6,12,12); ctx.strokeStyle="rgba(0,0,0,.5)"; ctx.lineWidth=2; ctx.strokeRect(-6,-6,12,12); ctx.restore()}
+  ctx.fillStyle="#c79a45"; for(const s of R.cas){ctx.save(); ctx.translate(s.x,s.y); ctx.rotate(s.r); ctx.fillRect(-3,-1.2,6,2.4); ctx.restore()}
+  for(const e of R.enemies){if(!seen(e)) continue; const a=Math.atan2(p.y-e.y,p.x-e.x);
+    if(e.gun) drawPerson(e.x,e.y,a,"#5a3a30","#c7a27c",18,e.hit>0); else drawZombie(e,e.aggro?a:Math.atan2(e.wy,e.wx)||0);
+    if(e.hp<e.max){ctx.fillStyle="rgba(0,0,0,.6)"; ctx.fillRect(e.x-15,e.y+20,30,4); ctx.fillStyle=C.bad; ctx.fillRect(e.x-15,e.y+20,30*e.hp/e.max,4)}}
+  if(p.arm){ctx.strokeStyle=C.r2; ctx.globalAlpha=.6; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p.x,p.y,19,0,6.28); ctx.stroke(); ctx.globalAlpha=1}
+  drawPerson(p.x,p.y,p.face,"#3f4a3a","#d9b48a",ITEMS[p.wpn.k].range>350?24:16,p.hit>0);
+  for(const q of R.parts) if(!q.glow){ctx.globalAlpha=clamp(q.life*3,0,1); ctx.fillStyle=q.col; ctx.fillRect(q.x-2,q.y-2,4,4)} ctx.globalAlpha=1;
+  // darkness: everything outside the line of sight
+  sg.setTransform(1,0,0,1,0,0); sg.globalCompositeOperation="source-over"; sg.fillStyle="rgba(4,5,7,.9)"; sg.fillRect(0,0,shade.width,shade.height);
+  world(sg); sg.globalCompositeOperation="destination-out";
+  const lg=sg.createRadialGradient(p.x,p.y,VR*.3,p.x,p.y,VR); lg.addColorStop(0,"rgba(0,0,0,1)"); lg.addColorStop(1,"rgba(0,0,0,0)");
+  sg.fillStyle=lg; polyPath(sg,poly); sg.fill();
+  ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(shade,0,0); world(ctx);
+  const wg=ctx.createRadialGradient(p.x,p.y,30,p.x,p.y,VR*1.15); wg.addColorStop(0,"#56606a"); wg.addColorStop(1,"#1c1f23");
+  for(const w of near){ctx.fillStyle=wg; ctx.fillRect(w.x,w.y,w.w,w.h); ctx.fillStyle=wallPat; ctx.fillRect(w.x,w.y,w.w,w.h);
+    ctx.fillStyle="rgba(255,255,255,.08)"; ctx.fillRect(w.x,w.y,w.w,3); ctx.fillStyle="rgba(0,0,0,.4)"; ctx.fillRect(w.x,w.y+w.h-4,w.w,4)}
+  // light sources
+  ctx.globalCompositeOperation="lighter";
+  for(const e of R.exits){glow(e.x,e.y,130,C.ok,.32+.1*Math.sin(tt*3))}
+  for(const c of R.crates) if(!c.open&&c.d>.36) glow(c.x,c.y,46,crateCol(c.d),.2+.08*Math.sin(tt*2+c.x));
+  for(const q of R.pick) glow(q.x,q.y,22,C["r"+ITEMS[q.it.k].r],.45);
+  if(R.flash>0){ctx.save(); polyPath(ctx,poly); ctx.clip(); glow(p.x+Math.cos(p.face)*20,p.y+Math.sin(p.face)*20,260,"rgba(255,176,80,1)",.5*R.flash/.07); ctx.restore()}
+  ctx.lineCap="round";
+  for(const b of R.bullets){ctx.strokeStyle="rgba(255,190,90,.35)"; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(b.x-b.vx*.025,b.y-b.vy*.025); ctx.stroke();
+    ctx.strokeStyle="#ffe2a8"; ctx.lineWidth=2; ctx.stroke()}
+  for(const b of R.ebul){glow(b.x,b.y,16,C.enemy2,.8); ctx.fillStyle="#ffd0a0"; ctx.beginPath(); ctx.arc(b.x,b.y,3,0,6.28); ctx.fill()}
+  for(const q of R.parts) if(q.glow){ctx.globalAlpha=clamp(q.life*3,0,1); ctx.fillStyle=q.col; ctx.fillRect(q.x-2,q.y-2,4,4)} ctx.globalAlpha=1;
+  ctx.globalCompositeOperation="source-over"; ctx.lineCap="butt";
+  for(const e of R.exits){ctx.strokeStyle=C.ok; ctx.setLineDash([10,8]); ctx.lineDashOffset=-tt*20; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(e.x,e.y,62,0,6.28); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle=C.ok; ctx.font="600 14px "+FONT; ctx.textAlign="center"; ctx.fillText("SORTIE",e.x,e.y+5)}
+  for(const e of R.enemies) if(e.aggro&&seen(e)){ctx.fillStyle=C.bad; ctx.font="700 16px "+FONT; ctx.textAlign="center"; ctx.fillText("!",e.x,e.y-24)}
   const ring=(x,y,f,col)=>{ctx.strokeStyle=col; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(x,y,24,-1.57,-1.57+6.28*f); ctx.stroke()};
   for(const c of R.crates) if(!c.open&&c.prog>0) ring(c.x,c.y,c.prog/.8,C.accent);
-  if(R.ext>0){ring(p.x,p.y,R.ext/3,C.ok); ctx.fillStyle=C.ok; ctx.textAlign="center"; ctx.font="600 15px "+css.getPropertyValue("--f-display"); ctx.fillText("EXTRACTION "+Math.ceil(3-R.ext),p.x,p.y-34)}
-  // exit arrows on screen edges
+  if(R.ext>0){ring(p.x,p.y,R.ext/3,C.ok); ctx.fillStyle=C.ok; ctx.textAlign="center"; ctx.font="600 15px "+FONT; ctx.fillText("EXTRACTION "+Math.ceil(3-R.ext),p.x,p.y-34)}
+  // screen-space overlays
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  const low=p.hp/p.max<.35, hurtA=Math.max(p.hit>0?.5:0,low?.25+.15*Math.sin(tt*5):0);
+  const vg=ctx.createRadialGradient(vw/2,vh/2,Math.min(vw,vh)*.35,vw/2,vh/2,Math.max(vw,vh)*.75);
+  vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,hurtA?`rgba(120,10,10,${hurtA.toFixed(2)})`:"rgba(0,0,0,.45)"); ctx.fillStyle=vg; ctx.fillRect(0,0,vw,vh);
   const top=60, bot=vh-90;
   for(const e of R.exits){const ex=(e.x-cx)*zoom, ey=(e.y-cy)*zoom; if(ex>0&&ex<vw&&ey>top&&ey<bot) continue;
     const a=Math.atan2(ey-vh/2,ex-vw/2), hx=clamp(vw/2+Math.cos(a)*vw,28,vw-28), hy=clamp(vh/2+Math.sin(a)*vh,top+20,bot);
     ctx.save(); ctx.translate(hx,hy); ctx.rotate(a); ctx.fillStyle=C.ok; ctx.beginPath(); ctx.moveTo(12,0); ctx.lineTo(-8,-9); ctx.lineTo(-8,9); ctx.fill(); ctx.restore();
-    ctx.fillStyle=C.ok; ctx.font="600 12px "+css.getPropertyValue("--f-display"); ctx.textAlign="center"; ctx.fillText(fmtM(Math.hypot(e.x-p.x,e.y-p.y)),hx-Math.cos(a)*30,hy-Math.sin(a)*22+4)}
+    ctx.fillStyle=C.ok; ctx.font="600 12px "+FONT; ctx.textAlign="center"; ctx.fillText(fmtM(Math.hypot(e.x-p.x,e.y-p.y)),hx-Math.cos(a)*30,hy-Math.sin(a)*22+4)}
   if(js&&mode==="raid"){const m=moveVec(); ctx.strokeStyle=C.fg; ctx.globalAlpha=.3; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(js.bx,js.by,55,0,6.28); ctx.stroke();
     ctx.fillStyle=C.fg; ctx.beginPath(); ctx.arc(js.bx+m.x*55,js.by+m.y*55,22,0,6.28); ctx.fill(); ctx.globalAlpha=1}
 }
