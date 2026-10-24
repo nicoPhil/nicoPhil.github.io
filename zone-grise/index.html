@@ -166,7 +166,7 @@ function renderStash(){
     <div class="card"><div class="lbl">Marchand</div>
       ${SHOP.map(k=>row({k},`<div class="btns"><button data-a="buy" data-k="${k}" ${S.credits>=price(k)?"":"disabled"}>${price(k)} cr</button></div>`)).join("")}
     </div>
-    <p class="note">${S.st.raids} raids · ${S.st.ext} extractions · ${S.st.dead} morts · meilleur butin ${S.st.best} cr · sauvegarde ${dbRef?"liée à ton compte":"sur cet appareil"}</p>
+    <p class="note">${S.st.raids} raids · ${S.st.ext} extractions · ${S.st.dead} morts · meilleur butin ${S.st.best} cr · sauvegarde ${dbRef?"liée à ton compte":"sur cet appareil"} · graphismes Kenney (CC0)</p>
   </div>`;
 }
 $("stash").addEventListener("click",e=>{
@@ -236,7 +236,7 @@ function startRaid(){
   R.walls.push({x:-40,y:-40,w:W+80,h:40},{x:-40,y:H,w:W+80,h:40},{x:-40,y:0,w:40,h:H},{x:W,y:0,w:40,h:H});
   for(let i=0;i<60;i++){const x=rnd(100,W-300), y=rnd(100,H-300), k=Math.random();
     if(k<.35) R.walls.push({x,y,w:rnd(140,340),h:26}); else if(k<.7) R.walls.push({x,y,w:26,h:rnd(140,340)}); else R.walls.push({x,y,w:rnd(70,170),h:rnd(70,170)})}
-  R.decal=makeDecal();
+  R.decal=makeDecal(); R.ground=SPR.ready?makeGround():null; R.decor=SPR.ready?makeDecor():[];
   const e1=freePt(70,(x,y)=>Math.min(x,y,W-x,H-y)<260);
   const e2=freePt(70,(x,y)=>Math.min(x,y,W-x,H-y)<260&&Math.hypot(x-e1.x,y-e1.y)>1400);
   R.exits=[e1,e2];
@@ -383,12 +383,37 @@ const groundPat=noiseTile("#1b1e21",2600,.05,.18,true), wallPat=noiseTile("rgba(
 function makeDecal(){const c=document.createElement("canvas"); c.width=W/2; c.height=H/2; const g=c.getContext("2d"); g.scale(.5,.5);
   for(let i=0;i<150;i++){const x=rnd(0,W), y=rnd(0,H), r=rnd(30,150), gr=g.createRadialGradient(x,y,0,x,y,r), dirt=Math.random()<.5;
     gr.addColorStop(0,dirt?"rgba(52,44,30,.35)":"rgba(0,0,0,.3)"); gr.addColorStop(1,"rgba(0,0,0,0)"); g.fillStyle=gr; g.fillRect(x-r,y-r,2*r,2*r)}
+  if(SPR.ready) return {c,g};
   g.strokeStyle="rgba(0,0,0,.5)"; g.lineWidth=1.5;
   for(let i=0;i<110;i++){let x=rnd(0,W), y=rnd(0,H), a=rnd(0,6.28); g.beginPath(); g.moveTo(x,y);
     for(let j=0;j<7;j++){a+=rnd(-.8,.8); x+=Math.cos(a)*rnd(8,24); y+=Math.sin(a)*rnd(8,24); g.lineTo(x,y)} g.stroke()}
   for(const w of R.walls) for(let i=0;i<(w.w+w.h)/14;i++){const s=rnd(2,7), side=Math.random()<.5, x=side?rnd(w.x-14,w.x+w.w+14):(Math.random()<.5?w.x-rnd(3,16):w.x+w.w+rnd(3,16)), y=side?(Math.random()<.5?w.y-rnd(3,16):w.y+w.h+rnd(3,16)):rnd(w.y-14,w.y+w.h+14);
     g.fillStyle=Math.random()<.5?"rgba(74,79,86,.9)":"rgba(36,38,42,.9)"; g.fillRect(x,y,s,s*rnd(.5,1))}
   return {c,g}}
+
+/* sprites: Kenney "Topdown Shooter" (CC0), assets/KENNEY-LICENSE.txt */
+const SPR={ready:false}, T=64, GN=Math.ceil(W/T);
+const CHAR={pGun:[110,352,51,43],pMach:[110,396,51,43],pSil:[0,220,56,43],sold:[110,220,52,43],zomb:[300,88,35,43]};
+const DEBRIS=[[18,9],[19,9],[20,9],[18,10],[19,10],[20,10],[21,10],[22,10],[21,9],[22,9]], LOOSE=[[20,8],[21,8],[22,8],[25,5],[23,7],[18,8],[19,8],[22,11]];
+const loadImg=src=>new Promise((ok,ko)=>{const i=new Image(); i.onload=()=>ok(i); i.onerror=ko; i.src=src});
+function whiteCopy(img,[x,y,w,h]){const c=document.createElement("canvas"); c.width=w; c.height=h; const g=c.getContext("2d");
+  g.drawImage(img,x,y,w,h,0,0,w,h); g.globalCompositeOperation="source-in"; g.fillStyle="#fff"; g.fillRect(0,0,w,h); return c}
+Promise.all([loadImg("assets/characters.png"),loadImg("assets/tiles.png")]).then(([ch,ti])=>{
+  SPR.ch=ch; SPR.ti=ti; SPR.white={}; for(const k in CHAR) SPR.white[k]=whiteCopy(ch,CHAR[k]); SPR.ready=true}).catch(()=>{});
+function sprite(key,x,y,a,hit,s=.85){const [sx,sy,w,h]=CHAR[key]; shadow(x,y,12); ctx.save(); ctx.translate(x,y); ctx.rotate(a); ctx.scale(s,s);
+  if(hit) ctx.drawImage(SPR.white[key],-17,-h/2); else ctx.drawImage(SPR.ch,sx,sy,w,h,-17,-h/2,w,h); ctx.restore()}
+const tile=([c,r],x,y,s)=>ctx.drawImage(SPR.ti,c*T,r*T,T,T,x,y,s,s);
+function makeGround(){const s1=rnd(0,9), s2=rnd(0,9), m=new Array(GN*GN);
+  for(let j=0;j<GN;j++) for(let i=0;i<GN;i++){const x=(i+.5)*T, y=(j+.5)*T, n=.12*Math.sin(i*.45+s1)*Math.cos(j*.38+s2)+rnd(-.04,.04), d=depth(x,y)+n;
+    m[j*GN+i]=d>.56?[pick([6,6,7,7,8]),0]:d>.3?[Math.random()<.8?4:5,0]:[Math.floor(rnd(0,4)),0]}
+  return m}
+function makeDecor(){const out=[];
+  for(const w of R.walls.slice(4)) for(let i=0;i<(w.w+w.h)/60;i++){const x=rnd(w.x-30,w.x+w.w+30), y=rnd(w.y-30,w.y+w.h+30); if(!inWall(x,y,6)) out.push({x,y,t:pick(DEBRIS),r:rnd(0,6.28),s:rnd(30,44)})}
+  for(let i=0;i<170;i++){const x=rnd(40,W-40), y=rnd(40,H-40); if(!inWall(x,y,10)) out.push({x,y,t:pick(LOOSE),r:rnd(0,6.28),s:rnd(26,40)})}
+  return out}
+function drawCrateSprite(c){ctx.fillStyle="rgba(0,0,0,.4)"; ctx.fillRect(c.x-13,c.y-11,32,32); tile([20,4],c.x-17,c.y-17,34);
+  if(c.open){ctx.fillStyle="rgba(10,8,6,.62)"; ctx.fillRect(c.x-17,c.y-17,34,34)} else {ctx.fillStyle=crateCol(c.d); ctx.fillRect(c.x-17,c.y-19,34,4)}}
+const wpnPose=k=>k==="dmr"?"pSil":k==="smg"||k==="ar"||k==="sg"?"pMach":"pGun";
 function visPoly(ox,oy){
   const x0=ox-VR, x1=ox+VR, y0=oy-VR, y1=oy+VR, segs=[], pts=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
   segs.push([x0,y0,x1,y0],[x1,y0,x1,y1],[x1,y1,x0,y1],[x0,y1,x0,y0]);
@@ -427,27 +452,36 @@ function draw(){
   const poly=visPoly(p.x,p.y), seen=o=>Math.hypot(o.x-p.x,o.y-p.y)<VR&&los(p,o);
   const near=R.walls.filter(w=>w.x<cx+ww+20&&w.x+w.w>cx-20&&w.y<cy+wh+20&&w.y+w.h>cy-20);
   world(ctx);
-  ctx.fillStyle=groundPat; ctx.fillRect(cx,cy,ww,wh);
+  const spr=SPR.ready&&R.ground, inView=(x,y,m=60)=>x>cx-m&&x<cx+ww+m&&y>cy-m&&y<cy+wh+m;
+  if(spr){const i0=clamp(Math.floor(cx/T),0,GN-1), i1=clamp(Math.floor((cx+ww)/T),0,GN-1), j0=clamp(Math.floor(cy/T),0,GN-1), j1=clamp(Math.floor((cy+wh)/T),0,GN-1);
+    for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++) tile(R.ground[j*GN+i],i*T,j*T,T+.6)}
+  else {ctx.fillStyle=groundPat; ctx.fillRect(cx,cy,ww,wh)}
   const sx0=clamp(cx,0,W), sy0=clamp(cy,0,H), sx1=clamp(cx+ww,0,W), sy1=clamp(cy+wh,0,H);
   if(sx1>sx0&&sy1>sy0) ctx.drawImage(R.decal.c,sx0/2,sy0/2,(sx1-sx0)/2,(sy1-sy0)/2,sx0,sy0,sx1-sx0,sy1-sy0);
+  if(spr) for(const o of R.decor) if(inView(o.x,o.y)){ctx.save(); ctx.translate(o.x,o.y); ctx.rotate(o.r); tile(o.t,-o.s/2,-o.s/2,o.s); ctx.restore()}
   ctx.fillStyle="rgba(0,0,0,.45)"; for(const w of near) ctx.fillRect(w.x+7,w.y+9,w.w,w.h);
-  for(const c of R.crates) drawCrate(c);
+  for(const c of R.crates) if(inView(c.x,c.y)) spr?drawCrateSprite(c):drawCrate(c);
   for(const q of R.pick){ctx.fillStyle=C["r"+ITEMS[q.it.k].r]; ctx.save(); ctx.translate(q.x,q.y+Math.sin(tt*3+q.x)*1.5); ctx.rotate(.785); ctx.fillRect(-6,-6,12,12); ctx.strokeStyle="rgba(0,0,0,.5)"; ctx.lineWidth=2; ctx.strokeRect(-6,-6,12,12); ctx.restore()}
   ctx.fillStyle="#c79a45"; for(const s of R.cas){ctx.save(); ctx.translate(s.x,s.y); ctx.rotate(s.r); ctx.fillRect(-3,-1.2,6,2.4); ctx.restore()}
   for(const e of R.enemies){if(!seen(e)) continue; const a=Math.atan2(p.y-e.y,p.x-e.x);
-    if(e.gun) drawPerson(e.x,e.y,a,"#5a3a30","#c7a27c",18,e.hit>0); else drawZombie(e,e.aggro?a:Math.atan2(e.wy,e.wx)||0);
+    const fa=e.gun||e.aggro?a:Math.atan2(e.wy,e.wx)||0;
+    if(spr) sprite(e.gun?"sold":"zomb",e.x,e.y,fa,e.hit>0); else if(e.gun) drawPerson(e.x,e.y,a,"#5a3a30","#c7a27c",18,e.hit>0); else drawZombie(e,fa);
     if(e.hp<e.max){ctx.fillStyle="rgba(0,0,0,.6)"; ctx.fillRect(e.x-15,e.y+20,30,4); ctx.fillStyle=C.bad; ctx.fillRect(e.x-15,e.y+20,30*e.hp/e.max,4)}}
   if(p.arm){ctx.strokeStyle=C.r2; ctx.globalAlpha=.6; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p.x,p.y,19,0,6.28); ctx.stroke(); ctx.globalAlpha=1}
-  drawPerson(p.x,p.y,p.face,"#3f4a3a","#d9b48a",ITEMS[p.wpn.k].range>350?24:16,p.hit>0);
+  if(spr) sprite(wpnPose(p.wpn.k),p.x,p.y,p.face,p.hit>0); else drawPerson(p.x,p.y,p.face,"#3f4a3a","#d9b48a",ITEMS[p.wpn.k].range>350?24:16,p.hit>0);
   for(const q of R.parts) if(!q.glow){ctx.globalAlpha=clamp(q.life*3,0,1); ctx.fillStyle=q.col; ctx.fillRect(q.x-2,q.y-2,4,4)} ctx.globalAlpha=1;
+  if(spr){ctx.fillStyle="rgba(12,16,34,.3)"; ctx.fillRect(cx,cy,ww,wh)}
   // darkness: everything outside the line of sight
   sg.setTransform(1,0,0,1,0,0); sg.globalCompositeOperation="source-over"; sg.fillStyle="rgba(4,5,7,.9)"; sg.fillRect(0,0,shade.width,shade.height);
   world(sg); sg.globalCompositeOperation="destination-out";
   const lg=sg.createRadialGradient(p.x,p.y,VR*.3,p.x,p.y,VR); lg.addColorStop(0,"rgba(0,0,0,1)"); lg.addColorStop(1,"rgba(0,0,0,0)");
   sg.fillStyle=lg; polyPath(sg,poly); sg.fill();
   ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(shade,0,0); world(ctx);
+  if(spr){const dg=ctx.createRadialGradient(p.x,p.y,40,p.x,p.y,VR*1.15); dg.addColorStop(0,"rgba(0,0,0,0)"); dg.addColorStop(1,"rgba(0,0,0,.78)");
+    for(const w of near){ctx.fillStyle="#c9611f"; ctx.fillRect(w.x,w.y,w.w,w.h); ctx.fillStyle="#474747"; ctx.fillRect(w.x+5,w.y+5,w.w-10,w.h-10);
+      ctx.fillStyle="rgba(255,255,255,.06)"; ctx.fillRect(w.x+5,w.y+5,w.w-10,3); ctx.fillStyle=dg; ctx.fillRect(w.x,w.y,w.w,w.h)}}
   const wg=ctx.createRadialGradient(p.x,p.y,30,p.x,p.y,VR*1.15); wg.addColorStop(0,"#56606a"); wg.addColorStop(1,"#1c1f23");
-  for(const w of near){ctx.fillStyle=wg; ctx.fillRect(w.x,w.y,w.w,w.h); ctx.fillStyle=wallPat; ctx.fillRect(w.x,w.y,w.w,w.h);
+  if(!spr) for(const w of near){ctx.fillStyle=wg; ctx.fillRect(w.x,w.y,w.w,w.h); ctx.fillStyle=wallPat; ctx.fillRect(w.x,w.y,w.w,w.h);
     ctx.fillStyle="rgba(255,255,255,.08)"; ctx.fillRect(w.x,w.y,w.w,3); ctx.fillStyle="rgba(0,0,0,.4)"; ctx.fillRect(w.x,w.y+w.h-4,w.w,4)}
   // light sources
   ctx.globalCompositeOperation="lighter";
